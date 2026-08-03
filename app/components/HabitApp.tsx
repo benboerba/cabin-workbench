@@ -230,7 +230,7 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
   return (
     <main className="app-shell">
       <header className="topbar">
-        <button className="brand brand-button" onClick={onBack} aria-label="返回浮岛工作台">
+        <button className="brand brand-button" onClick={onBack} aria-label="返回木屋工作台">
           <span className="brand-dot">1′</span>
           <span>一分小事</span>
           <small>返回工作台</small>
@@ -968,42 +968,60 @@ function WorldWorkbench({
       onPointerLeave={() => setView({ x: 0, y: 0 })}
       style={{ "--look-x": view.x, "--look-y": view.y } as React.CSSProperties}
     >
-      <div className="pixel-sky" aria-hidden="true">
-        <div className="pixel-sun" />
-        <div className="pixel-cloud cloud-a"><i /><i /><i /></div>
-        <div className="pixel-cloud cloud-b"><i /><i /><i /></div>
-        <div className="far-island island-a"><i /></div>
-        <div className="far-island island-b"><i /></div>
-        <div className="pixel-particles">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</div>
+      <div className="cabin-scene" aria-hidden="true">
+        <div className="cabin-wall" />
+        <div className="cabin-window">
+          <span className="window-sky" />
+          <span className="window-sun" />
+          <span className="window-mountain mountain-one" />
+          <span className="window-mountain mountain-two" />
+          <span className="window-pine pine-one" />
+          <span className="window-pine pine-two" />
+          <span className="window-pine pine-three" />
+          <span className="window-frame" />
+        </div>
+        <div className="cabin-beam beam-left" />
+        <div className="cabin-beam beam-right" />
+        <div className="cabin-beam beam-top" />
+        <div className="cabin-shelf">
+          <span className="shelf-book book-one" />
+          <span className="shelf-book book-two" />
+          <span className="shelf-book book-three" />
+          <span className="shelf-pot"><i /></span>
+        </div>
+        <div className="cabin-lamp"><span /><i /></div>
+        <div className="cabin-floor" />
+        <div className="cabin-rug" />
+        <div className="pixel-particles">{Array.from({ length: 10 }, (_, i) => <i key={i} />)}</div>
       </div>
 
       <header className="world-hud">
         <div className="world-brand">
           <span className="world-brand-cube"><i /><i /><i /></span>
-          <div><strong>浮岛工作台</strong><small>ISLAND DESK · 01</small></div>
+          <div><strong>木屋工作台</strong><small>WOODLAND CABIN · 01</small></div>
         </div>
-        <div className="world-date"><span>{formatLongDay(today)}</span><i />天气晴朗，适合推进一点</div>
+        <div className="world-date"><span>{formatLongDay(today)}</span><i />炉火正暖，适合专注一会儿</div>
         <div className="world-user" title={user.email}>
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
           <div><strong>{user.displayName}</strong><a href="/signout-with-chatgpt?return_to=/">退出</a></div>
         </div>
       </header>
 
-      <section className="world-stage" aria-label="像素浮岛工作台场景">
+      <section className="world-stage" aria-label="像素木屋工作台场景">
         <div className="world-title-card">
-          <p>YOUR LITTLE WORLD</p>
-          <h1>今天想推进<br /><em>哪一件事？</em></h1>
-          <span>移动鼠标观察浮岛 · 点击场景进入工具</span>
+          <p>WELCOME HOME</p>
+          <h1>今天想从哪件<br /><em>小事开始？</em></h1>
+          <span>轻轻移动视角 · 点击屋内物件进入工具</span>
         </div>
 
-        <div className="main-island" aria-hidden="true">
-          <div className="island-grass" />
-          <div className="island-soil soil-one" />
-          <div className="island-soil soil-two" />
-          <div className="island-stone stone-one" />
-          <div className="island-stone stone-two" />
-          <div className="pixel-tree"><span /><i /><i /><i /><i /></div>
-          <div className="pixel-lantern"><span /><i /></div>
+        <div className="cabin-desk" aria-hidden="true">
+          <span className="desk-top" />
+          <span className="desk-drawer drawer-one" />
+          <span className="desk-drawer drawer-two" />
+          <span className="desk-leg desk-left" />
+          <span className="desk-leg desk-right" />
+          <span className="desk-mug"><i /></span>
+          <span className="desk-paper" />
         </div>
 
         <button className="world-object workbench-object" onClick={() => setToolsOpen(true)}>
@@ -1011,7 +1029,7 @@ function WorldWorkbench({
           <span className="pixel-workbench" aria-hidden="true">
             <i className="bench-top" /><i className="bench-front" /><i className="bench-grid" /><i className="bench-leg left" /><i className="bench-leg right" />
           </span>
-          <span className="world-object-label"><small>TOOL STATION</small><strong>工具工作台</strong><em>{2} 个工具已点亮</em></span>
+          <span className="world-object-label"><small>TOOL CHEST</small><strong>工具箱</strong><em>{2} 个工具可以使用</em></span>
         </button>
 
         <button className="world-object calendar-object" onClick={openSchedule}>
@@ -1022,24 +1040,29 @@ function WorldWorkbench({
             <small>{parseDate(today).getMonth() + 1} 月</small>
             <span className="calendar-pixel-marks"><i /><i /><i /></span>
           </span>
-          <span className="world-object-label align-right"><small>DAILY MAP</small><strong>日程石碑</strong><em>{activeSchedule.length} 件正在路上</em></span>
+          <span className="world-object-label align-right"><small>WALL CALENDAR</small><strong>个人日程</strong><em>{activeSchedule.length} 件正在路上</em></span>
         </button>
 
         <button className="habit-crystal" onClick={openHabit} aria-label="进入一分小事">
-          <span className="crystal-core">1′</span>
-          <span className="crystal-shadow" />
-          <span className="world-object-label"><small>LONG TERM</small><strong>一分小事</strong><em>{activeHabits.length} 个习惯生长中</em></span>
+          <span className="pixel-hourglass" aria-hidden="true">
+            <i className="hourglass-top" />
+            <i className="hourglass-glass" />
+            <i className="hourglass-sand" />
+            <i className="hourglass-bottom" />
+            <strong>1′</strong>
+          </span>
+          <span className="world-object-label"><small>ONE MINUTE</small><strong>一分小事</strong><em>{activeHabits.length} 个习惯坚持中</em></span>
         </button>
 
         <aside className="world-quest-card">
-          <div className="quest-head"><span>今日地图</span><small>{todayDone} 项已完成</small></div>
+          <div className="quest-head"><span>今日便笺</span><small>{todayDone} 项已完成</small></div>
           <div className="quest-row"><i className="quest-habit" /><span>长期习惯</span><strong>{activeHabits.length}</strong></div>
           <div className="quest-row"><i className="quest-task" /><span>短线事项</span><strong>{activeSchedule.filter((item) => item.kind === "task").length}</strong></div>
           <div className="quest-row"><i className="quest-project" /><span>今日推进项目</span><strong>{touchedProjects.size}</strong></div>
         </aside>
 
         <aside className="world-mini-calendar">
-          <p>本周坐标</p>
+          <p>本周日历</p>
           <div>
             {weekDates.map((date) => (
               <button key={date} className={date === today ? "current" : ""} onClick={openSchedule}>
@@ -1062,8 +1085,8 @@ function WorldWorkbench({
         <div className="world-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setToolsOpen(false)}>
           <section className="tool-library" role="dialog" aria-modal="true" aria-labelledby="tool-library-title">
             <button className="world-modal-close" onClick={() => setToolsOpen(false)} aria-label="关闭">×</button>
-            <p>TOOL STATION · LEVEL 01</p>
-            <h2 id="tool-library-title">我的工具工作台</h2>
+            <p>TOOL CHEST · CABIN 01</p>
+            <h2 id="tool-library-title">打开木屋工具箱</h2>
             <span className="tool-library-copy">长期的事慢慢生长，眼前的事清楚推进。</span>
             <div className="tool-library-grid">
               <button className="tool-tile habit-tile" onClick={openHabit}>
@@ -1160,7 +1183,7 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
   return (
     <main className="schedule-shell">
       <header className="schedule-header">
-        <button className="schedule-back" onClick={onBack}><span>←</span><div><small>返回浮岛</small><strong>个人工作台</strong></div></button>
+        <button className="schedule-back" onClick={onBack}><span>←</span><div><small>返回木屋</small><strong>个人工作台</strong></div></button>
         <nav>
           <button className={tab === "today" ? "active" : ""} onClick={() => setTab("today")}>今日</button>
           <button className={tab === "calendar" ? "active" : ""} onClick={() => setTab("calendar")}>日历</button>
