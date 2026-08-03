@@ -34,22 +34,33 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.doesNotMatch(page, /codex-preview|SkeletonPreview/);
 });
 
-test("uses private identity and durable storage", async () => {
-  const [page, layout, hosting, schema] = await Promise.all([
+test("uses email identity and durable server storage", async () => {
+  const [page, layout, schema, auth, database, gitignore] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/auth.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../.gitignore", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /getCurrentUser/);
-  assert.match(page, /chatGPTSignInPath/);
+  assert.match(page, /邮箱登录/);
+  assert.match(page, /注册账户/);
   assert.match(layout, /og-three-room-cabin\.png/);
-  assert.match(hosting, /"d1":\s*"DB"/);
+  assert.match(schema, /export const users/);
+  assert.match(schema, /export const authSessions/);
   assert.match(schema, /export const challenges/);
   assert.match(schema, /export const checkins/);
   assert.match(schema, /export const timerSessions/);
   assert.match(schema, /export const scheduleItems/);
   assert.match(schema, /export const scheduleEntries/);
   assert.match(schema, /export const portalLinks/);
+  assert.match(auth, /scrypt-v1/);
+  assert.match(auth, /httpOnly:\s*true/);
+  assert.match(auth, /timingSafeEqual/);
+  assert.match(database, /better-sqlite3/);
+  assert.match(database, /journal_mode = WAL/);
+  assert.match(gitignore, /\*\.pem/);
+  assert.match(gitignore, /\/\.data\//);
 });

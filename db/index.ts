@@ -1,13 +1,35 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
+import Database from "better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import {
+  drizzle,
+  type BetterSQLite3Database,
+} from "drizzle-orm/better-sqlite3";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import * as schema from "./schema";
 
-export function getDb() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
-    );
-  }
+type DatabaseHandle = BetterSQLite3Database<typeof schema>;
 
-  return drizzle(env.DB, { schema });
+const globalDatabase = globalThis as typeof globalThis & {
+  cabinDatabase?: DatabaseHandle;
+};
+
+export function getDb() {
+  if (globalDatabase.cabinDatabase) return globalDatabase.cabinDatabase;
+
+  const databasePath = path.resolve(
+    process.env.DATABASE_PATH ?? path.join(process.cwd(), ".data", "oneminute.db"),
+  );
+  mkdirSync(path.dirname(databasePath), { recursive: true });
+
+  const sqlite = new Database(databasePath);
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
+  sqlite.pragma("busy_timeout = 5000");
+
+  const database = drizzle(sqlite, { schema });
+  migrate(database, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+  globalDatabase.cabinDatabase = database;
+
+  return database;
 }

@@ -1,17 +1,6 @@
 import type { Metadata } from "next";
-import { Noto_Sans_SC, Noto_Serif_SC } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
-
-const notoSans = Noto_Sans_SC({
-  variable: "--font-noto-sans",
-  subsets: ["latin"],
-});
-
-const notoSerif = Noto_Serif_SC({
-  variable: "--font-noto-serif",
-  subsets: ["latin"],
-});
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -48,9 +37,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className={`${notoSans.variable} ${notoSerif.variable}`}>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

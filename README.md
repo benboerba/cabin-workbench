@@ -1,100 +1,53 @@
-# vinext-starter
+# 木屋工作台
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+一个把工作、生活和娱乐收进像素木屋的个人工作台。工作间包含“一分小事”和个人日程/项目管理；生活市集与娱乐角可以添加、删除和排序常用入口。
 
-## Prerequisites
+## 服务器版能力
 
-- Node.js `>=22.13.0`
+- 邮箱 + 密码注册登录，不发送验证码或验证邮件
+- 密码使用 scrypt 加密摘要，数据库不保存明文密码
+- 每个账户的数据严格按用户 ID 隔离
+- SQLite 持久化；启动时自动执行 Drizzle 数据库迁移
+- 适合低配 EC2：Node.js 单进程 + Nginx，无需 Docker 或 PostgreSQL
+- 公开仓库只包含代码；数据库、私钥与环境文件已忽略
 
-## Quick Start
+## 本地运行
+
+需要 Node.js 22 或更高版本。
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
+```
+
+本地 HTTP 测试时把 `.env.local` 中的 `COOKIE_SECURE` 改为 `false`。
+
+## 验证
+
+```bash
+npm run typecheck
+npm run lint
 npm run build
+npm test
 ```
 
-This starter does not use `wrangler.jsonc`.
+## EC2 部署
 
-## Included Shape
+生产目录约定为 `/home/ec2-user/apps/cabin-workbench`，数据保存在 `/home/ec2-user/data/cabin-workbench/oneminute.db`。部署模板位于 `deploy/`：
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- `cabin-workbench.service`：systemd 守护进程，应用仅监听 `127.0.0.1:4270`
+- `cabin-workbench.nginx.conf`：独立域名反向代理、登录限流与安全响应头
 
-## Workspace Auth Headers
+服务器环境文件 `/etc/cabin-workbench.env`：
 
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```dotenv
+DATABASE_PATH=/home/ec2-user/data/cabin-workbench/oneminute.db
+COOKIE_SECURE=true
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+上线后通过 `/api/health` 检查应用和数据库状态。SQLite 备份时应同时处理数据库及 WAL 文件，推荐先使用 SQLite 的在线备份命令生成一致快照。
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## 数据说明
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+ChatGPT Sites 旧版以站点专属的 ChatGPT 用户 ID 标识账户，无法安全地自动映射到新邮箱账户。因此服务器版默认创建全新的账户与数据空间；旧站仍可保留，后续可按明确账户关系做一次性导入。

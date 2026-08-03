@@ -263,7 +263,7 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
           <div>
             <strong>{user.displayName}</strong>
-            <a href="/signout-with-chatgpt?return_to=/">退出</a>
+            <a href="/logout">退出</a>
           </div>
         </div>
       </header>
@@ -1220,7 +1220,7 @@ function CabinFoyer({
         <div className="world-date"><span>{formatLongDay(today)}</span><i />欢迎回来，选一间房开始</div>
         <div className="world-user" title={user.email}>
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName}</strong><a href="/signout-with-chatgpt?return_to=/">退出</a></div>
+          <div><strong>{user.displayName}</strong><a href="/logout">退出</a></div>
         </div>
       </header>
 

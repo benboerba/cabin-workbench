@@ -1,4 +1,3 @@
-import { chatGPTSignInPath } from "./chatgpt-auth";
 import { HabitApp } from "./components/HabitApp";
 import { getCurrentUser } from "./lib/current-user";
 
@@ -19,10 +18,11 @@ export default async function Home() {
           <p className="signin-copy">
             回到一座属于你的私人木屋：工作间收好“一分小事”和“个人日程”，生活市集快速抵达，娱乐角自在放松。
           </p>
-          <a className="primary-button signin-button" href={chatGPTSignInPath("/")}>
-            使用 ChatGPT 登录
-          </a>
-          <p className="privacy-note">登录后才能查看和保存你的私人记录</p>
+          <div className="signin-actions">
+            <a className="primary-button signin-button" href="/auth?mode=login">邮箱登录</a>
+            <a className="secondary-button signin-button" href="/auth?mode=register">注册账户</a>
+          </div>
+          <p className="privacy-note">无需验证码。登录后才能查看和保存你的私人记录</p>
         </section>
       </main>
     );
