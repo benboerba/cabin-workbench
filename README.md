@@ -48,6 +48,22 @@ COOKIE_SECURE=true
 
 上线后通过 `/api/health` 检查应用和数据库状态。SQLite 备份时应同时处理数据库及 WAL 文件，推荐先使用 SQLite 的在线备份命令生成一致快照。
 
+### 阿里云部署
+
+阿里云模板使用独立的 Node.js 22 运行时，不替换服务器上已有的 Node.js 版本：
+
+- 应用目录：`/opt/cabin-workbench`
+- 数据目录：`/var/lib/cabin-workbench`
+- 内部端口：`127.0.0.1:4270`
+- 服务模板：`deploy/cabin-workbench-aliyun.service`
+- Nginx 模板：`deploy/cabin-workbench-aliyun.nginx.conf`
+- 受限安全组下的反向隧道：`deploy/cabin-workbench-tunnel.service`
+- 公网入口 Nginx：`deploy/cabin-workbench-gateway.nginx.conf`
+
+运行服务使用无登录权限的 `cabin-workbench` 系统用户，数据库目录权限为 `0700`，数据库文件由 `0077` umask 保护。
+
+当前线上实例通过一条受限的 SSH 反向隧道连接既有公网入口；隧道仅绑定入口机的 `127.0.0.1:14270`，公网由 Nginx 在 `8443` 提供 HTTPS。这样无需占用阿里云上已有的 `3001`、`4173` 服务端口，也无需暴露应用的内部端口。
+
 ## 数据说明
 
 ChatGPT Sites 旧版以站点专属的 ChatGPT 用户 ID 标识账户，无法安全地自动映射到新邮箱账户。因此服务器版默认创建全新的账户与数据空间；旧站仍可保留，后续可按明确账户关系做一次性导入。

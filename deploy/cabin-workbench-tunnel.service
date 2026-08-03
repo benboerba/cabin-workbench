@@ -1,0 +1,28 @@
+[Unit]
+Description=Cabin Workbench reverse tunnel to public gateway
+After=network-online.target cabin-workbench.service
+Wants=network-online.target
+Requires=cabin-workbench.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/ssh -NT \
+    -i /etc/cabin-workbench-tunnel/id_ed25519 \
+    -o BatchMode=yes \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 \
+    -o ServerAliveCountMax=3 \
+    -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile=/etc/cabin-workbench-tunnel/known_hosts \
+    -R 127.0.0.1:14270:127.0.0.1:4270 \
+    root@38.181.56.160
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

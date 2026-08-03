@@ -1,0 +1,27 @@
+[Unit]
+Description=Cabin Workbench web application (Alibaba Cloud)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cabin-workbench
+Group=cabin-workbench
+UMask=0077
+WorkingDirectory=/opt/cabin-workbench
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=4270
+Environment=PATH=/opt/node-v22.23.1-linux-x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+EnvironmentFile=/etc/cabin-workbench.env
+ExecStart=/opt/node-v22.23.1-linux-x64/bin/npm start
+Restart=always
+RestartSec=4
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/cabin-workbench
+
+[Install]
+WantedBy=multi-user.target
