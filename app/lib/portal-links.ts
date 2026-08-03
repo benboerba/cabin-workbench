@@ -40,22 +40,20 @@ export async function ensureDefaultPortalLinks(userId: string) {
     life: existing.filter((link) => link.category === "life" && link.isVisible).length,
     entertainment: existing.filter((link) => link.category === "entertainment" && link.isVisible).length,
   };
-  await db.insert(portalLinks).values(
-    missing.map((link) => {
-      const isVisible = visibleCounts[link.category] < 12;
-      if (isVisible) visibleCounts[link.category] += 1;
-      return {
-        id: crypto.randomUUID(),
-        userId,
-        ...link,
-        sortOrder: nextOrders[link.category]++,
-        isDefault: true,
-        isVisible,
-        createdAt: now,
-        updatedAt: now,
-      };
-    }),
-  );
+  for (const link of missing) {
+    const isVisible = visibleCounts[link.category] < 12;
+    if (isVisible) visibleCounts[link.category] += 1;
+    await db.insert(portalLinks).values({
+      id: crypto.randomUUID(),
+      userId,
+      ...link,
+      sortOrder: nextOrders[link.category]++,
+      isDefault: true,
+      isVisible,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 }
 
 export async function getVisiblePortalLinks(userId: string) {
