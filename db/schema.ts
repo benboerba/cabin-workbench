@@ -141,3 +141,33 @@ export const scheduleEntries = sqliteTable(
     index("idx_schedule_entries_user_date").on(table.userId, table.entryDate),
   ],
 );
+
+export const portalLinks = sqliteTable(
+  "portal_links",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    category: text("category", { enum: ["life", "entertainment"] }).notNull(),
+    label: text("label").notNull(),
+    url: text("url").notNull(),
+    icon: text("icon").notNull(),
+    color: text("color").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    defaultKey: text("default_key"),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    isVisible: integer("is_visible", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("idx_portal_links_user_category_order").on(
+      table.userId,
+      table.category,
+      table.sortOrder,
+    ),
+    uniqueIndex("idx_portal_links_user_default_key").on(
+      table.userId,
+      table.defaultKey,
+    ),
+  ],
+);

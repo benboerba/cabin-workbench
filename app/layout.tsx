@@ -18,9 +18,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const baseUrl = new URL(`${protocol}://${host}`);
-  const title = "木屋工作台｜长期习惯与个人日程";
-  const description = "回到温暖的像素木屋，坚持长期习惯，清楚推进每天的事项与项目。";
-  const imageUrl = new URL("/og-cabin-workbench.png", baseUrl).toString();
+  const title = "木屋工作台｜工作、生活与娱乐";
+  const description = "一座属于你的像素木屋：在工作间推进事情，在生活市集快速抵达，在娱乐角自在放松。";
+  const imageUrl = new URL("/og-three-room-cabin.png", baseUrl).toString();
 
   return {
     metadataBase: baseUrl,

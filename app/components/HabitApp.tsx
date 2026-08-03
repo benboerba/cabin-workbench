@@ -39,6 +39,22 @@ type DashboardData = {
   sessions: TimerSession[];
   scheduleItems: ScheduleItem[];
   scheduleEntries: ScheduleEntry[];
+  portalLinks: PortalLink[];
+};
+
+type PortalLink = {
+  id: string;
+  category: "life" | "entertainment";
+  label: string;
+  url: string;
+  icon: string;
+  color: string;
+  sortOrder: number;
+  defaultKey: string | null;
+  isDefault: boolean;
+  isVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type ScheduleItem = {
@@ -940,12 +956,19 @@ function WorldWorkbench({
 }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [room, setRoom] = useState<"foyer" | "work" | "life" | "entertainment">("foyer");
   const [view, setView] = useState({ x: 0, y: 0 });
   const today = toLocalDate();
 
-  useEffect(() => {
-    void api<DashboardData>("/api/dashboard").then(setData).catch(() => undefined);
+  const loadDashboard = useCallback(async () => {
+    const result = await api<DashboardData>("/api/dashboard");
+    setData(result);
   }, []);
+
+  useEffect(() => {
+    const task = window.setTimeout(() => void loadDashboard().catch(() => undefined), 0);
+    return () => window.clearTimeout(task);
+  }, [loadDashboard]);
 
   const activeHabits = data?.challenges.filter((item) => item.status === "active") ?? [];
   const activeSchedule = data?.scheduleItems.filter((item) => item.status === "active") ?? [];
@@ -961,9 +984,36 @@ function WorldWorkbench({
     setView({ x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) });
   }
 
+  if (room === "foyer") {
+    return (
+      <CabinFoyer
+        user={user}
+        today={today}
+        view={view}
+        moveView={moveView}
+        resetView={() => setView({ x: 0, y: 0 })}
+        openRoom={setRoom}
+        workSummary={{ habits: activeHabits.length, schedule: activeSchedule.length, done: todayDone }}
+      />
+    );
+  }
+
+  if (room === "life" || room === "entertainment") {
+    return (
+      <PortalRoom
+        user={user}
+        category={room}
+        links={(data?.portalLinks ?? []).filter((link) => link.category === room)}
+        onBack={() => setRoom("foyer")}
+        switchRoom={setRoom}
+        reload={loadDashboard}
+      />
+    );
+  }
+
   return (
     <main
-      className="pixel-world"
+      className="pixel-world work-room"
       onPointerMove={moveView}
       onPointerLeave={() => setView({ x: 0, y: 0 })}
       style={{ "--look-x": view.x, "--look-y": view.y } as React.CSSProperties}
@@ -996,15 +1046,12 @@ function WorldWorkbench({
       </div>
 
       <header className="world-hud">
-        <div className="world-brand">
+        <button className="world-brand room-brand-button" onClick={() => setRoom("foyer")}>
           <span className="world-brand-cube"><i /><i /><i /></span>
-          <div><strong>木屋工作台</strong><small>WOODLAND CABIN · 01</small></div>
-        </div>
+          <div><strong>工作间</strong><small>返回木屋玄关</small></div>
+        </button>
         <div className="world-date"><span>{formatLongDay(today)}</span><i />炉火正暖，适合专注一会儿</div>
-        <div className="world-user" title={user.email}>
-          <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName}</strong><a href="/signout-with-chatgpt?return_to=/">退出</a></div>
-        </div>
+        <RoomSwitcher current="work" openRoom={setRoom} />
       </header>
 
       <section className="world-stage" aria-label="像素木屋工作台场景">
@@ -1102,6 +1149,335 @@ function WorldWorkbench({
         </div>
       )}
     </main>
+  );
+}
+
+type CabinRoom = "foyer" | "work" | "life" | "entertainment";
+
+function RoomSwitcher({
+  current,
+  openRoom,
+}: {
+  current: CabinRoom;
+  openRoom: (room: CabinRoom) => void;
+}) {
+  return (
+    <nav className="room-switcher" aria-label="切换木屋房间">
+      <button className={current === "foyer" ? "active" : ""} onClick={() => openRoom("foyer")}>玄关</button>
+      <button className={current === "work" ? "active" : ""} onClick={() => openRoom("work")}>工作</button>
+      <button className={current === "life" ? "active" : ""} onClick={() => openRoom("life")}>生活</button>
+      <button className={current === "entertainment" ? "active" : ""} onClick={() => openRoom("entertainment")}>娱乐</button>
+    </nav>
+  );
+}
+
+function CabinFoyer({
+  user,
+  today,
+  view,
+  moveView,
+  resetView,
+  openRoom,
+  workSummary,
+}: {
+  user: UserSummary;
+  today: string;
+  view: { x: number; y: number };
+  moveView: (event: React.PointerEvent<HTMLElement>) => void;
+  resetView: () => void;
+  openRoom: (room: CabinRoom) => void;
+  workSummary: { habits: number; schedule: number; done: number };
+}) {
+  return (
+    <main
+      className="pixel-world cabin-foyer"
+      onPointerMove={moveView}
+      onPointerLeave={resetView}
+      style={{ "--look-x": view.x, "--look-y": view.y } as React.CSSProperties}
+    >
+      <div className="foyer-background" aria-hidden="true">
+        <div className="foyer-wall" />
+        <div className="foyer-ceiling-beam" />
+        <div className="foyer-floor" />
+        <div className="foyer-lantern"><span /><i /></div>
+        <div className="foyer-runner" />
+        <div className="pixel-particles">{Array.from({ length: 10 }, (_, i) => <i key={i} />)}</div>
+      </div>
+
+      <header className="world-hud foyer-hud">
+        <div className="world-brand">
+          <span className="world-brand-cube"><i /><i /><i /></span>
+          <div><strong>木屋玄关</strong><small>WORK · LIFE · PLAY</small></div>
+        </div>
+        <div className="world-date"><span>{formatLongDay(today)}</span><i />欢迎回来，选一间房开始</div>
+        <div className="world-user" title={user.email}>
+          <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+          <div><strong>{user.displayName}</strong><a href="/signout-with-chatgpt?return_to=/">退出</a></div>
+        </div>
+      </header>
+
+      <section className="foyer-stage" aria-label="木屋的三个房间">
+        <div className="foyer-title">
+          <p>WELCOME TO YOUR CABIN</p>
+          <h1>今天，想进入哪一间？</h1>
+          <span>工作、生活与娱乐，各有自己的位置。</span>
+        </div>
+
+        <button className="room-gate life-gate" onClick={() => openRoom("life")}>
+          <span className="gate-glow" />
+          <span className="gate-frame">
+            <i className="gate-sign">生活</i>
+            <span className="market-box box-a">淘</span>
+            <span className="market-box box-b">京</span>
+            <span className="market-shelf" />
+          </span>
+          <span className="gate-copy"><small>LIFE MARKET</small><strong>生活市集</strong><em>购物与生活入口</em></span>
+        </button>
+
+        <button className="room-gate work-gate" onClick={() => openRoom("work")}>
+          <span className="gate-glow" />
+          <span className="gate-frame">
+            <i className="gate-sign">工作</i>
+            <span className="work-desk-mini"><i /><b /></span>
+            <span className="work-hourglass-mini">1′</span>
+            <span className="work-calendar-mini">{parseDate(today).getDate()}</span>
+          </span>
+          <span className="gate-copy"><small>WORK ROOM · MAIN</small><strong>工作间</strong><em>{workSummary.habits} 个习惯 · {workSummary.schedule} 件日程</em></span>
+          <span className="work-room-badge">今天完成 {workSummary.done}</span>
+        </button>
+
+        <button className="room-gate fun-gate" onClick={() => openRoom("entertainment")}>
+          <span className="gate-glow" />
+          <span className="gate-frame">
+            <i className="gate-sign">娱乐</i>
+            <span className="fun-screen"><i>▶</i></span>
+            <span className="fun-books" />
+          </span>
+          <span className="gate-copy"><small>PLAY LOUNGE</small><strong>娱乐角</strong><em>视频与内容入口</em></span>
+        </button>
+      </section>
+
+      <nav className="foyer-hotbar" aria-label="快速进入房间">
+        <button onClick={() => openRoom("work")}><span>01</span><strong>工作</strong></button>
+        <button onClick={() => openRoom("life")}><span>02</span><strong>生活</strong></button>
+        <button onClick={() => openRoom("entertainment")}><span>03</span><strong>娱乐</strong></button>
+      </nav>
+    </main>
+  );
+}
+
+function PortalRoom({
+  user,
+  category,
+  links,
+  onBack,
+  switchRoom,
+  reload,
+}: {
+  user: UserSummary;
+  category: "life" | "entertainment";
+  links: PortalLink[];
+  onBack: () => void;
+  switchRoom: (room: CabinRoom) => void;
+  reload: () => Promise<void>;
+}) {
+  const [manage, setManage] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const sortedLinks = [...links].sort((a, b) => a.sortOrder - b.sortOrder);
+  const life = category === "life";
+  const copy = life
+    ? { eyebrow: "LIFE MARKET", title: "生活市集", subtitle: "把常去的商店收进自己的置物架。", add: "添加购物入口" }
+    : { eyebrow: "PLAY LOUNGE", title: "娱乐角", subtitle: "想放松的时候，从这里直接出发。", add: "添加娱乐入口" };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  async function persistOrder(ordered: PortalLink[]) {
+    try {
+      await api("/api/portal-links", {
+        method: "POST",
+        body: JSON.stringify({ action: "reorder", category, orderedIds: ordered.map((link) => link.id) }),
+      });
+      await reload();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法调整顺序");
+    }
+  }
+
+  function moveLink(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= sortedLinks.length) return;
+    const ordered = [...sortedLinks];
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    void persistOrder(ordered);
+  }
+
+  function dropOn(targetId: string) {
+    if (!draggedId || draggedId === targetId) return;
+    const from = sortedLinks.findIndex((link) => link.id === draggedId);
+    const to = sortedLinks.findIndex((link) => link.id === targetId);
+    if (from < 0 || to < 0) return;
+    const ordered = [...sortedLinks];
+    const [moved] = ordered.splice(from, 1);
+    ordered.splice(to, 0, moved);
+    setDraggedId(null);
+    void persistOrder(ordered);
+  }
+
+  async function removeLink(link: PortalLink) {
+    if (!window.confirm(`从${copy.title}移除「${link.label}」吗？`)) return;
+    try {
+      await api(`/api/portal-links/${link.id}`, { method: "DELETE" });
+      setToast(link.isDefault ? "已移除，需要时可以恢复默认入口" : "入口已删除");
+      await reload();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法移除入口");
+    }
+  }
+
+  async function restoreDefaults() {
+    try {
+      await api("/api/portal-links", {
+        method: "POST",
+        body: JSON.stringify({ action: "restore-defaults", category }),
+      });
+      setToast("默认入口已经回到木屋");
+      await reload();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法恢复默认入口");
+    }
+  }
+
+  return (
+    <main className={`portal-room ${life ? "life-room" : "entertainment-room"}`}>
+      <header className="portal-room-header">
+        <button className="portal-back" onClick={onBack}><span>←</span><div><small>返回玄关</small><strong>{copy.title}</strong></div></button>
+        <RoomSwitcher current={category} openRoom={switchRoom} />
+        <div className="portal-user" title={user.email}><span>{user.displayName.slice(0, 1).toUpperCase()}</span><strong>{user.displayName}</strong></div>
+      </header>
+
+      <div className="portal-room-scenery" aria-hidden="true">
+        <span className="portal-beam beam-a" /><span className="portal-beam beam-b" />
+        <span className="portal-window"><i /><b /></span>
+        <span className="portal-lamp"><i /></span>
+        <span className="portal-room-floor" />
+      </div>
+
+      <section className="portal-room-content">
+        <div className="portal-room-title">
+          <div><p>{copy.eyebrow}</p><h1>{copy.title}</h1><span>{copy.subtitle}</span></div>
+          <div className="portal-actions">
+            <button className={manage ? "active" : ""} onClick={() => setManage((value) => !value)}>{manage ? "完成整理" : "整理入口"}</button>
+            <button className="portal-add" onClick={() => setAddOpen(true)}>＋ {copy.add}</button>
+          </div>
+        </div>
+
+        <div className="portal-shelf">
+          <div className="portal-grid">
+            {sortedLinks.map((link, index) => (
+              <article
+                className={`portal-link-card ${manage ? "managing" : ""} ${draggedId === link.id ? "dragging" : ""}`}
+                key={link.id}
+                draggable={manage}
+                onDragStart={() => setDraggedId(link.id)}
+                onDragOver={(event) => manage && event.preventDefault()}
+                onDrop={() => dropOn(link.id)}
+              >
+                <a href={link.url} target="_blank" rel="noreferrer" aria-label={`打开${link.label}`} onClick={(event) => manage && event.preventDefault()}>
+                  <span className="portal-link-icon" style={{ "--portal-color": link.color } as React.CSSProperties}>{link.icon}</span>
+                  <div><small>{life ? "SHOP" : "DISCOVER"} · 0{index + 1}</small><strong>{link.label}</strong><em>打开网站 ↗</em></div>
+                </a>
+                {manage && (
+                  <div className="portal-manage-controls">
+                    <button onClick={() => moveLink(index, -1)} disabled={index === 0} aria-label="向前移动">←</button>
+                    <button onClick={() => moveLink(index, 1)} disabled={index === sortedLinks.length - 1} aria-label="向后移动">→</button>
+                    <button className="remove" onClick={() => void removeLink(link)}>移除</button>
+                  </div>
+                )}
+              </article>
+            ))}
+            {sortedLinks.length < 12 && (
+              <button className="portal-empty-slot" onClick={() => setAddOpen(true)}><span>＋</span><strong>放入一个新入口</strong><small>{sortedLinks.length} / 12</small></button>
+            )}
+          </div>
+          <div className="portal-shelf-edge" />
+        </div>
+
+        {manage && <button className="restore-defaults" onClick={() => void restoreDefaults()}>恢复默认入口</button>}
+      </section>
+
+      {addOpen && (
+        <AddPortalModal
+          category={category}
+          onClose={() => setAddOpen(false)}
+          onAdded={async () => {
+            setAddOpen(false);
+            setToast("新入口已经放进房间");
+            await reload();
+          }}
+        />
+      )}
+      {toast && <div className="toast">{toast}</div>}
+    </main>
+  );
+}
+
+function AddPortalModal({
+  category,
+  onClose,
+  onAdded,
+}: {
+  category: "life" | "entertainment";
+  onClose: () => void;
+  onAdded: () => Promise<void>;
+}) {
+  const [label, setLabel] = useState("");
+  const [url, setUrl] = useState("");
+  const [icon, setIcon] = useState(category === "life" ? "购" : "▶");
+  const [color, setColor] = useState(category === "life" ? "#ad713d" : "#6f6b92");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await api("/api/portal-links", {
+        method: "POST",
+        body: JSON.stringify({ action: "create", category, label, url, icon, color }),
+      });
+      await onAdded();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "暂时无法添加入口");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="world-modal-backdrop portal-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <form className="portal-add-modal" onSubmit={submit}>
+        <button type="button" className="world-modal-close" onClick={onClose} aria-label="关闭">×</button>
+        <p>ADD A NEW DOORWAY</p>
+        <h2>添加一个网站入口</h2>
+        <span>以后可以随时移除或调整它的位置。</span>
+        <label><strong>显示名称</strong><input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={30} placeholder="例如：网易云音乐" required /></label>
+        <label><strong>网页地址</strong><input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://..." inputMode="url" required /></label>
+        <div className="portal-appearance-fields">
+          <label><strong>标记</strong><input value={icon} onChange={(event) => setIcon(Array.from(event.target.value).slice(0, 2).join(""))} maxLength={4} /></label>
+          <label><strong>颜色</strong><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label>
+          <span className="portal-icon-preview" style={{ "--portal-color": color } as React.CSSProperties}>{icon || "↗"}</span>
+        </div>
+        {error && <p className="form-error">{error}</p>}
+        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving}>{saving ? "正在放入…" : "添加到房间"}</button></div>
+      </form>
+    </div>
   );
 }
 

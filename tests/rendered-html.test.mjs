@@ -13,6 +13,10 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.match(page, /木屋工作台/);
   assert.match(app, /WELCOME HOME/);
   assert.match(app, /打开木屋工具箱/);
+  assert.match(app, /木屋玄关/);
+  assert.match(app, /生活市集/);
+  assert.match(app, /娱乐角/);
+  assert.match(app, /恢复默认入口/);
   assert.match(styles, /cabin-window/);
   assert.match(app, /个人日程/);
   assert.match(app, /每天生成独立记录/);
@@ -36,11 +40,12 @@ test("uses private identity and durable storage", async () => {
 
   assert.match(page, /getCurrentUser/);
   assert.match(page, /chatGPTSignInPath/);
-  assert.match(layout, /og-cabin-workbench\.png/);
+  assert.match(layout, /og-three-room-cabin\.png/);
   assert.match(hosting, /"d1":\s*"DB"/);
   assert.match(schema, /export const challenges/);
   assert.match(schema, /export const checkins/);
   assert.match(schema, /export const timerSessions/);
   assert.match(schema, /export const scheduleItems/);
   assert.match(schema, /export const scheduleEntries/);
+  assert.match(schema, /export const portalLinks/);
 });

@@ -3,11 +3,13 @@ import { getDb } from "../../../db";
 import {
   challenges,
   checkins,
+  portalLinks,
   scheduleEntries,
   scheduleItems,
   timerSessions,
 } from "../../../db/schema";
 import { requireApiUser } from "../../lib/current-user";
+import { ensureDefaultPortalLinks } from "../../lib/portal-links";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,8 @@ export async function GET() {
   if (auth.response) return auth.response;
 
   const db = getDb();
-  const [challengeRows, checkinRows, sessionRows, scheduleItemRows, scheduleEntryRows] = await Promise.all([
+  await ensureDefaultPortalLinks(auth.user.userId);
+  const [challengeRows, checkinRows, sessionRows, scheduleItemRows, scheduleEntryRows, portalLinkRows] = await Promise.all([
     db
       .select()
       .from(challenges)
@@ -49,6 +52,11 @@ export async function GET() {
       .where(eq(scheduleEntries.userId, auth.user.userId))
       .orderBy(desc(scheduleEntries.entryDate), desc(scheduleEntries.updatedAt))
       .limit(2000),
+    db
+      .select()
+      .from(portalLinks)
+      .where(and(eq(portalLinks.userId, auth.user.userId), eq(portalLinks.isVisible, true)))
+      .orderBy(portalLinks.category, portalLinks.sortOrder, portalLinks.createdAt),
   ]);
 
   return Response.json({
@@ -57,5 +65,6 @@ export async function GET() {
     sessions: sessionRows,
     scheduleItems: scheduleItemRows,
     scheduleEntries: scheduleEntryRows,
+    portalLinks: portalLinkRows,
   });
 }

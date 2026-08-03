@@ -14,10 +14,10 @@ export default async function Home() {
           <div className="brand-mark" aria-hidden="true">
             1′
           </div>
-          <p className="eyebrow">木屋工作台</p>
-          <h1>长期的事慢慢生长，<br />眼前的事清楚推进。</h1>
+          <p className="eyebrow">木屋工作台 · 工作 / 生活 / 娱乐</p>
+          <h1>工作有序，生活方便，<br />娱乐自在。</h1>
           <p className="signin-copy">
-            回到一间属于你的私人木屋：用“一分小事”坚持长期习惯，用“个人日程”安排事项与项目。
+            回到一座属于你的私人木屋：工作间收好“一分小事”和“个人日程”，生活市集快速抵达，娱乐角自在放松。
           </p>
           <a className="primary-button signin-button" href={chatGPTSignInPath("/")}>
             使用 ChatGPT 登录

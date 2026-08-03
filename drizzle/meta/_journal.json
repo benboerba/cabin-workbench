@@ -15,6 +15,13 @@
       "when": 1785736403827,
       "tag": "0001_safe_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785741079336,
+      "tag": "0002_giant_nekra",
+      "breakpoints": true
     }
   ]
 }
