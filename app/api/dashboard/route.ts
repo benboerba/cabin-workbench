@@ -1,6 +1,12 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { challenges, checkins, timerSessions } from "../../../db/schema";
+import {
+  challenges,
+  checkins,
+  scheduleEntries,
+  scheduleItems,
+  timerSessions,
+} from "../../../db/schema";
 import { requireApiUser } from "../../lib/current-user";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +16,7 @@ export async function GET() {
   if (auth.response) return auth.response;
 
   const db = getDb();
-  const [challengeRows, checkinRows, sessionRows] = await Promise.all([
+  const [challengeRows, checkinRows, sessionRows, scheduleItemRows, scheduleEntryRows] = await Promise.all([
     db
       .select()
       .from(challenges)
@@ -32,11 +38,24 @@ export async function GET() {
         ),
       )
       .orderBy(desc(timerSessions.updatedAt)),
+    db
+      .select()
+      .from(scheduleItems)
+      .where(eq(scheduleItems.userId, auth.user.userId))
+      .orderBy(desc(scheduleItems.createdAt)),
+    db
+      .select()
+      .from(scheduleEntries)
+      .where(eq(scheduleEntries.userId, auth.user.userId))
+      .orderBy(desc(scheduleEntries.entryDate), desc(scheduleEntries.updatedAt))
+      .limit(2000),
   ]);
 
   return Response.json({
     challenges: challengeRows,
     checkins: checkinRows,
     sessions: sessionRows,
+    scheduleItems: scheduleItemRows,
+    scheduleEntries: scheduleEntryRows,
   });
 }

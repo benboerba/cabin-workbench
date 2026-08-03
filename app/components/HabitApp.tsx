@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Challenge = {
   id: string;
@@ -37,12 +37,43 @@ type DashboardData = {
   challenges: Challenge[];
   checkins: Checkin[];
   sessions: TimerSession[];
+  scheduleItems: ScheduleItem[];
+  scheduleEntries: ScheduleEntry[];
+};
+
+type ScheduleItem = {
+  id: string;
+  kind: "task" | "project";
+  title: string;
+  note: string;
+  priority: "important" | "normal" | "later";
+  repeatDaily: boolean;
+  startDate: string;
+  dueDate: string | null;
+  progress: number;
+  status: "active" | "completed" | "archived";
+  completedDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ScheduleEntry = {
+  id: string;
+  itemId: string;
+  entryDate: string;
+  action: "completed" | "touched";
+  progress: number | null;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type UserSummary = { displayName: string; email: string };
 
 const CHALLENGE_COLORS = ["#e36a44", "#5b8272", "#c49a45"];
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+const PRIORITY_LABELS = { important: "重要", normal: "普通", later: "稍后" } as const;
+const PRIORITY_ORDER = { important: 0, normal: 1, later: 2 } as const;
 
 function toLocalDate(date = new Date()) {
   const year = date.getFullYear();
@@ -116,6 +147,24 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function HabitApp({ user }: { user: UserSummary }) {
+  const [activeTool, setActiveTool] = useState<"world" | "habit" | "schedule">("world");
+
+  if (activeTool === "habit") {
+    return <HabitWorkspace user={user} onBack={() => setActiveTool("world")} />;
+  }
+  if (activeTool === "schedule") {
+    return <ScheduleWorkspace user={user} onBack={() => setActiveTool("world")} />;
+  }
+  return (
+    <WorldWorkbench
+      user={user}
+      openHabit={() => setActiveTool("habit")}
+      openSchedule={() => setActiveTool("schedule")}
+    />
+  );
+}
+
+function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => void }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loadingError, setLoadingError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -135,7 +184,8 @@ export function HabitApp({ user }: { user: UserSummary }) {
   }, []);
 
   useEffect(() => {
-    void loadDashboard();
+    const task = window.setTimeout(() => void loadDashboard(), 0);
+    return () => window.clearTimeout(task);
   }, [loadDashboard]);
 
   useEffect(() => {
@@ -180,10 +230,11 @@ export function HabitApp({ user }: { user: UserSummary }) {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="一分小事首页">
+        <button className="brand brand-button" onClick={onBack} aria-label="返回浮岛工作台">
           <span className="brand-dot">1′</span>
           <span>一分小事</span>
-        </a>
+          <small>返回工作台</small>
+        </button>
         <div className="account-chip" title={user.email}>
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
           <div>
@@ -353,17 +404,13 @@ function CreateChallengeModal({
   onClose: () => void;
   onCreated: () => Promise<void>;
 }) {
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(() => {
+    const prefill = sessionStorage.getItem("oneminute-prefill") ?? "";
+    if (prefill) sessionStorage.removeItem("oneminute-prefill");
+    return prefill;
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    const prefill = sessionStorage.getItem("oneminute-prefill");
-    if (prefill) {
-      setTitle(prefill);
-      sessionStorage.removeItem("oneminute-prefill");
-    }
-  }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -548,10 +595,6 @@ function NotesArchive({
   const challengesWithHistory = challenges.filter((challenge) => checkins.some((item) => item.challengeId === challenge.id));
   const [selectedId, setSelectedId] = useState(challengesWithHistory[0]?.id ?? "");
 
-  useEffect(() => {
-    if (!selectedId && challengesWithHistory[0]) setSelectedId(challengesWithHistory[0].id);
-  }, [selectedId, challengesWithHistory]);
-
   const selectedChallenge = challenges.find((item) => item.id === selectedId) ?? challengesWithHistory[0];
   const notes = checkins
     .filter((item) => item.challengeId === selectedChallenge?.id && item.note)
@@ -653,14 +696,10 @@ function TimerExperience({
   const [prepareCount, setPrepareCount] = useState(3);
   const [session, setSession] = useState<TimerSession | undefined>(existingSession);
   const [remaining, setRemaining] = useState(existingSession?.remainingMs ?? 60000);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(() => localStorage.getItem("oneminute-muted") === "true");
   const [error, setError] = useState("");
   const startedRef = useRef(false);
   const completedRef = useRef(false);
-
-  useEffect(() => {
-    setMuted(localStorage.getItem("oneminute-muted") === "true");
-  }, []);
 
   const playTone = useCallback((frequency: number, duration = 0.12) => {
     if (muted) return;
@@ -887,5 +926,544 @@ function NoteModal({
         </button>
       </section>
     </div>
+  );
+}
+
+function WorldWorkbench({
+  user,
+  openHabit,
+  openSchedule,
+}: {
+  user: UserSummary;
+  openHabit: () => void;
+  openSchedule: () => void;
+}) {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [view, setView] = useState({ x: 0, y: 0 });
+  const today = toLocalDate();
+
+  useEffect(() => {
+    void api<DashboardData>("/api/dashboard").then(setData).catch(() => undefined);
+  }, []);
+
+  const activeHabits = data?.challenges.filter((item) => item.status === "active") ?? [];
+  const activeSchedule = data?.scheduleItems.filter((item) => item.status === "active") ?? [];
+  const todayEntries = data?.scheduleEntries.filter((item) => item.entryDate === today) ?? [];
+  const touchedProjects = new Set(todayEntries.filter((entry) => entry.action === "touched").map((entry) => entry.itemId));
+  const todayDone = todayEntries.filter((entry) => entry.action === "completed").length;
+  const weekDates = Array.from({ length: 7 }, (_, index) => addDays(today, index - 3));
+
+  function moveView(event: React.PointerEvent<HTMLElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+    const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+    setView({ x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) });
+  }
+
+  return (
+    <main
+      className="pixel-world"
+      onPointerMove={moveView}
+      onPointerLeave={() => setView({ x: 0, y: 0 })}
+      style={{ "--look-x": view.x, "--look-y": view.y } as React.CSSProperties}
+    >
+      <div className="pixel-sky" aria-hidden="true">
+        <div className="pixel-sun" />
+        <div className="pixel-cloud cloud-a"><i /><i /><i /></div>
+        <div className="pixel-cloud cloud-b"><i /><i /><i /></div>
+        <div className="far-island island-a"><i /></div>
+        <div className="far-island island-b"><i /></div>
+        <div className="pixel-particles">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</div>
+      </div>
+
+      <header className="world-hud">
+        <div className="world-brand">
+          <span className="world-brand-cube"><i /><i /><i /></span>
+          <div><strong>浮岛工作台</strong><small>ISLAND DESK · 01</small></div>
+        </div>
+        <div className="world-date"><span>{formatLongDay(today)}</span><i />天气晴朗，适合推进一点</div>
+        <div className="world-user" title={user.email}>
+          <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+          <div><strong>{user.displayName}</strong><a href="/signout-with-chatgpt?return_to=/">退出</a></div>
+        </div>
+      </header>
+
+      <section className="world-stage" aria-label="像素浮岛工作台场景">
+        <div className="world-title-card">
+          <p>YOUR LITTLE WORLD</p>
+          <h1>今天想推进<br /><em>哪一件事？</em></h1>
+          <span>移动鼠标观察浮岛 · 点击场景进入工具</span>
+        </div>
+
+        <div className="main-island" aria-hidden="true">
+          <div className="island-grass" />
+          <div className="island-soil soil-one" />
+          <div className="island-soil soil-two" />
+          <div className="island-stone stone-one" />
+          <div className="island-stone stone-two" />
+          <div className="pixel-tree"><span /><i /><i /><i /><i /></div>
+          <div className="pixel-lantern"><span /><i /></div>
+        </div>
+
+        <button className="world-object workbench-object" onClick={() => setToolsOpen(true)}>
+          <span className="object-pulse" />
+          <span className="pixel-workbench" aria-hidden="true">
+            <i className="bench-top" /><i className="bench-front" /><i className="bench-grid" /><i className="bench-leg left" /><i className="bench-leg right" />
+          </span>
+          <span className="world-object-label"><small>TOOL STATION</small><strong>工具工作台</strong><em>{2} 个工具已点亮</em></span>
+        </button>
+
+        <button className="world-object calendar-object" onClick={openSchedule}>
+          <span className="object-pulse" />
+          <span className="pixel-calendar" aria-hidden="true">
+            <span className="calendar-pixel-head"><i /><i /></span>
+            <strong>{parseDate(today).getDate()}</strong>
+            <small>{parseDate(today).getMonth() + 1} 月</small>
+            <span className="calendar-pixel-marks"><i /><i /><i /></span>
+          </span>
+          <span className="world-object-label align-right"><small>DAILY MAP</small><strong>日程石碑</strong><em>{activeSchedule.length} 件正在路上</em></span>
+        </button>
+
+        <button className="habit-crystal" onClick={openHabit} aria-label="进入一分小事">
+          <span className="crystal-core">1′</span>
+          <span className="crystal-shadow" />
+          <span className="world-object-label"><small>LONG TERM</small><strong>一分小事</strong><em>{activeHabits.length} 个习惯生长中</em></span>
+        </button>
+
+        <aside className="world-quest-card">
+          <div className="quest-head"><span>今日地图</span><small>{todayDone} 项已完成</small></div>
+          <div className="quest-row"><i className="quest-habit" /><span>长期习惯</span><strong>{activeHabits.length}</strong></div>
+          <div className="quest-row"><i className="quest-task" /><span>短线事项</span><strong>{activeSchedule.filter((item) => item.kind === "task").length}</strong></div>
+          <div className="quest-row"><i className="quest-project" /><span>今日推进项目</span><strong>{touchedProjects.size}</strong></div>
+        </aside>
+
+        <aside className="world-mini-calendar">
+          <p>本周坐标</p>
+          <div>
+            {weekDates.map((date) => (
+              <button key={date} className={date === today ? "current" : ""} onClick={openSchedule}>
+                <small>{["日", "一", "二", "三", "四", "五", "六"][parseDate(date).getDay()]}</small>
+                <strong>{parseDate(date).getDate()}</strong>
+                <i className={data?.scheduleEntries.some((entry) => entry.entryDate === date) ? "has-entry" : ""} />
+              </button>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <nav className="world-dock" aria-label="快速进入工具">
+        <button onClick={openHabit}><span className="dock-habit">1′</span><div><small>长期习惯</small><strong>一分小事</strong></div></button>
+        <i />
+        <button onClick={openSchedule}><span className="dock-schedule">▦</span><div><small>短线执行</small><strong>个人日程</strong></div></button>
+      </nav>
+
+      {toolsOpen && (
+        <div className="world-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setToolsOpen(false)}>
+          <section className="tool-library" role="dialog" aria-modal="true" aria-labelledby="tool-library-title">
+            <button className="world-modal-close" onClick={() => setToolsOpen(false)} aria-label="关闭">×</button>
+            <p>TOOL STATION · LEVEL 01</p>
+            <h2 id="tool-library-title">我的工具工作台</h2>
+            <span className="tool-library-copy">长期的事慢慢生长，眼前的事清楚推进。</span>
+            <div className="tool-library-grid">
+              <button className="tool-tile habit-tile" onClick={openHabit}>
+                <span className="tool-pixel-icon">1′</span>
+                <div><small>LONG TERM</small><h3>一分小事</h3><p>用一分钟完成，用二十一天坚持。</p><em>{activeHabits.length} 个习惯进行中 →</em></div>
+              </button>
+              <button className="tool-tile schedule-tile" onClick={openSchedule}>
+                <span className="tool-pixel-icon">▦</span>
+                <div><small>SHORT TERM</small><h3>个人日程</h3><p>让事项每天出现，让项目持续向前。</p><em>{activeSchedule.length} 件正在推进 →</em></div>
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => void }) {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [tab, setTab] = useState<"today" | "calendar" | "projects">("today");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
+  const [projectUpdate, setProjectUpdate] = useState<ScheduleItem | null>(null);
+  const [toast, setToast] = useState("");
+  const today = toLocalDate();
+
+  const load = useCallback(async () => {
+    const result = await api<DashboardData>("/api/dashboard");
+    setData(result);
+  }, []);
+
+  useEffect(() => {
+    const task = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(task);
+  }, [load]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const items = data?.scheduleItems ?? [];
+  const entries = data?.scheduleEntries ?? [];
+  const todayEntries = entries.filter((entry) => entry.entryDate === today);
+  const touchedIds = new Set(todayEntries.map((entry) => entry.itemId));
+  const prioritySort = (a: ScheduleItem, b: ScheduleItem) => {
+    const touched = Number(touchedIds.has(a.id)) - Number(touchedIds.has(b.id));
+    if (touched !== 0) return touched;
+    const priority = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+    if (priority !== 0) return priority;
+    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+    return a.dueDate ? -1 : b.dueDate ? 1 : b.createdAt.localeCompare(a.createdAt);
+  };
+  const activeTasks = items
+    .filter((item) => item.kind === "task" && item.status === "active" && item.startDate <= today)
+    .sort(prioritySort);
+  const completedToday = items.filter(
+    (item) => item.kind === "task" && (
+      item.completedDate === today || todayEntries.some((entry) => entry.itemId === item.id && entry.action === "completed")
+    ),
+  );
+  const activeProjects = items
+    .filter((item) => item.kind === "project" && item.status === "active" && item.startDate <= today)
+    .sort(prioritySort);
+
+  async function completeTask(item: ScheduleItem) {
+    try {
+      await api("/api/schedule/entries", {
+        method: "POST",
+        body: JSON.stringify({ itemId: item.id, entryDate: today }),
+      });
+      setToast(item.repeatDaily ? "今天这一项完成了" : "事项已完成");
+      await load();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法完成");
+    }
+  }
+
+  async function archiveItem(item: ScheduleItem) {
+    if (!window.confirm(`结束「${item.title}」吗？已有记录会保留。`)) return;
+    try {
+      await api(`/api/schedule/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "archive" }),
+      });
+      setToast("已收进历史");
+      await load();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法结束");
+    }
+  }
+
+  return (
+    <main className="schedule-shell">
+      <header className="schedule-header">
+        <button className="schedule-back" onClick={onBack}><span>←</span><div><small>返回浮岛</small><strong>个人工作台</strong></div></button>
+        <nav>
+          <button className={tab === "today" ? "active" : ""} onClick={() => setTab("today")}>今日</button>
+          <button className={tab === "calendar" ? "active" : ""} onClick={() => setTab("calendar")}>日历</button>
+          <button className={tab === "projects" ? "active" : ""} onClick={() => setTab("projects")}>项目</button>
+        </nav>
+        <div className="schedule-account"><span>{user.displayName.slice(0, 1).toUpperCase()}</span><strong>{user.displayName}</strong></div>
+      </header>
+
+      <div className="schedule-wrap">
+        <section className="schedule-hero">
+          <div><p>{formatLongDay(today)} · SHORT TERM</p><h1>{tab === "today" ? "把今天，整理得刚刚好。" : tab === "calendar" ? "让时间留下清楚的痕迹。" : "每个项目，都往前一点。"}</h1></div>
+          <button className="schedule-create" onClick={() => setCreateOpen(true)}><span>＋</span>新建事项或项目</button>
+        </section>
+
+        {!data ? (
+          <div className="schedule-loading"><i /><p>正在整理今天的地图…</p></div>
+        ) : tab === "calendar" ? (
+          <ScheduleCalendar items={items} entries={entries} today={today} />
+        ) : tab === "projects" ? (
+          <ProjectBoard
+            projects={items.filter((item) => item.kind === "project")}
+            entries={entries}
+            today={today}
+            onUpdate={setProjectUpdate}
+            onEdit={setEditingItem}
+            onArchive={(item) => void archiveItem(item)}
+          />
+        ) : (
+          <div className="today-dashboard">
+            <section className="today-main-panel">
+              <div className="schedule-section-head">
+                <div><span className="section-index">01</span><div><small>DAILY TASKS</small><h2>今天的事项</h2></div></div>
+                <p>{completedToday.length} / {activeTasks.length + completedToday.filter((item) => !item.repeatDaily).length} 完成</p>
+              </div>
+              <div className="daily-task-list">
+                {activeTasks.length === 0 ? (
+                  <button className="schedule-empty" onClick={() => setCreateOpen(true)}><span>＋</span><strong>今天还没有事项</strong><small>添加一件短线任务</small></button>
+                ) : activeTasks.map((item) => {
+                  const done = todayEntries.some((entry) => entry.itemId === item.id && entry.action === "completed");
+                  return (
+                    <article className={`daily-task ${done ? "done" : ""}`} key={item.id}>
+                      <button className="task-check" onClick={() => !done && void completeTask(item)} disabled={done}>{done ? "✓" : ""}</button>
+                      <div className="task-copy"><div><span className={`priority-pill ${item.priority}`}>{PRIORITY_LABELS[item.priority]}</span>{item.repeatDaily && <span className="repeat-pill">每日重复</span>}</div><h3>{item.title}</h3>{item.note && <p>{item.note}</p>}</div>
+                      <div className="task-meta"><small>{item.repeatDaily ? "今天的一次" : `计划于 ${formatDay(item.startDate)}`}</small><button onClick={() => setEditingItem(item)}>编辑</button><button onClick={() => void archiveItem(item)}>结束</button></div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {completedToday.length > 0 && (
+                <div className="completed-fold"><p>今天已完成</p>{completedToday.map((item) => <span key={item.id}>✓ {item.title}</span>)}</div>
+              )}
+            </section>
+
+            <aside className="today-side-panel">
+              <div className="schedule-section-head compact"><div><span className="section-index">02</span><div><small>PROJECTS</small><h2>持续推进</h2></div></div><button onClick={() => setTab("projects")}>全部</button></div>
+              <div className="today-project-list">
+                {activeProjects.length === 0 ? (
+                  <button className="project-empty" onClick={() => setCreateOpen(true)}>创建第一个项目 →</button>
+                ) : activeProjects.map((project) => {
+                  const touched = touchedIds.has(project.id);
+                  return (
+                    <button className={`today-project ${touched ? "touched" : ""}`} key={project.id} onClick={() => setProjectUpdate(project)}>
+                      <div><span className={`priority-dot ${project.priority}`} /><small>{touched ? "今日已推进" : project.dueDate ? `截止 ${formatDay(project.dueDate)}` : "持续项目"}</small><strong>{project.title}</strong></div>
+                      <span className="project-ring" style={{ "--project-progress": `${project.progress * 3.6}deg` } as React.CSSProperties}><em>{project.progress}%</em></span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="daily-quote"><span>“</span><p>长期的事，不必今天完成。<br />但可以今天推进。</p></div>
+            </aside>
+          </div>
+        )}
+      </div>
+
+      {createOpen && <ScheduleItemModal today={today} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setToast("已经放进你的工作台"); await load(); }} />}
+      {editingItem && <ScheduleItemModal today={today} item={editingItem} onClose={() => setEditingItem(null)} onSaved={async () => { setEditingItem(null); setToast("调整已保存"); await load(); }} />}
+      {projectUpdate && <ProjectUpdateModal project={projectUpdate} today={today} onClose={() => setProjectUpdate(null)} onSaved={async () => { setProjectUpdate(null); setToast("今天的推进已记录"); await load(); }} />}
+      {toast && <div className="toast" role="status">{toast}</div>}
+    </main>
+  );
+}
+
+function ScheduleItemModal({
+  today,
+  item,
+  onClose,
+  onSaved,
+}: {
+  today: string;
+  item?: ScheduleItem;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [kind, setKind] = useState<"task" | "project">(item?.kind ?? "task");
+  const [title, setTitle] = useState(item?.title ?? "");
+  const [note, setNote] = useState(item?.note ?? "");
+  const [priority, setPriority] = useState<ScheduleItem["priority"]>(item?.priority ?? "normal");
+  const [repeatDaily, setRepeatDaily] = useState(item?.repeatDaily ?? false);
+  const [startDate, setStartDate] = useState(item?.startDate ?? today);
+  const [dueDate, setDueDate] = useState(item?.dueDate ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await api(item ? `/api/schedule/items/${item.id}` : "/api/schedule/items", {
+        method: item ? "PATCH" : "POST",
+        body: JSON.stringify({ action: item ? "update" : undefined, kind, title, note, priority, repeatDaily, startDate, dueDate }),
+      });
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "暂时无法保存");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop schedule-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="modal-card schedule-item-modal" role="dialog" aria-modal="true">
+        <button className="modal-close" onClick={onClose} aria-label="关闭">×</button>
+        <p className="eyebrow">{item ? "EDIT" : "NEW COORDINATE"}</p>
+        <h2>{item ? "调整这条坐标" : "今天，要记下什么？"}</h2>
+        {!item && <div className="kind-switch"><button className={kind === "task" ? "active" : ""} onClick={() => setKind("task")}><span>✓</span><div><strong>普通事项</strong><small>一次完成，或每天重复</small></div></button><button className={kind === "project" ? "active" : ""} onClick={() => setKind("project")}><span>▰</span><div><strong>持续项目</strong><small>每天推进一点百分比</small></div></button></div>}
+        <form onSubmit={save}>
+          <label htmlFor="schedule-title">{kind === "project" ? "项目名称" : "事项名称"}</label>
+          <input id="schedule-title" autoFocus maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={kind === "project" ? "例如：完成个人网站" : "例如：早上查看邮件"} />
+          <div className="form-grid">
+            <div><label htmlFor="schedule-start">开始日期</label><input id="schedule-start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} disabled={Boolean(item)} /></div>
+            {kind === "project" && <div><label htmlFor="schedule-due">截止日期（可选）</label><input id="schedule-due" type="date" min={startDate} value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></div>}
+          </div>
+          {kind === "task" && <label className="repeat-toggle"><input type="checkbox" checked={repeatDaily} onChange={(event) => setRepeatDaily(event.target.checked)} /><span /><div><strong>每天重复</strong><small>每天生成独立记录，昨天没完成也不会堆到今天</small></div></label>}
+          <fieldset className="priority-field"><legend>优先级</legend><div>{(["important", "normal", "later"] as const).map((value) => <button type="button" className={`${value} ${priority === value ? "active" : ""}`} key={value} onClick={() => setPriority(value)}><i />{PRIORITY_LABELS[value]}</button>)}</div></fieldset>
+          <label htmlFor="schedule-note">备注（可选）</label>
+          <textarea id="schedule-note" maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="给未来的自己一点上下文…" />
+          {error && <p className="form-error">{error}</p>}
+          <button className="primary-button full-button" disabled={!title.trim() || saving}>{saving ? "正在保存…" : item ? "保存调整" : "放进工作台"}</button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ProjectUpdateModal({
+  project,
+  today,
+  onClose,
+  onSaved,
+}: {
+  project: ScheduleItem;
+  today: string;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [progress, setProgress] = useState(project.progress);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    const completeProject = progress === 100
+      ? window.confirm("进度已经达到 100%，要把这个项目完成归档吗？")
+      : false;
+    setSaving(true);
+    try {
+      await api("/api/schedule/entries", {
+        method: "POST",
+        body: JSON.stringify({ itemId: project.id, entryDate: today, progress, note, completeProject }),
+      });
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "暂时无法保存");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop schedule-modal-backdrop">
+      <section className="modal-card project-update-modal" role="dialog" aria-modal="true">
+        <button className="modal-close" onClick={onClose} aria-label="关闭">×</button>
+        <p className="eyebrow">TODAY&apos;S PROGRESS</p>
+        <h2>今天推进了多少？</h2>
+        <p><strong>{project.title}</strong>{project.dueDate ? ` · 截止 ${formatDay(project.dueDate)}` : " · 持续项目"}</p>
+        <div className="progress-editor">
+          <div className="large-project-ring" style={{ "--project-progress": `${progress * 3.6}deg` } as React.CSSProperties}><span><strong>{progress}</strong><small>%</small></span></div>
+          <div><input aria-label="项目进度" type="range" min="0" max="100" step="5" value={progress} onChange={(event) => setProgress(Number(event.target.value))} /><div className="range-labels"><span>刚开始</span><span>完成</span></div></div>
+        </div>
+        <label htmlFor="project-progress-note">今天处理了什么？（可选）</label>
+        <textarea id="project-progress-note" maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：把首页的信息结构理清了。" />
+        <p className="progress-hint">即使百分比没有变化，保存后也会标记“今日已推进”。</p>
+        {error && <p className="form-error">{error}</p>}
+        <button className="primary-button full-button" onClick={() => void save()} disabled={saving}>{saving ? "正在记录…" : "记录今天的推进"}</button>
+      </section>
+    </div>
+  );
+}
+
+function ProjectBoard({
+  projects,
+  entries,
+  today,
+  onUpdate,
+  onEdit,
+  onArchive,
+}: {
+  projects: ScheduleItem[];
+  entries: ScheduleEntry[];
+  today: string;
+  onUpdate: (project: ScheduleItem) => void;
+  onEdit: (project: ScheduleItem) => void;
+  onArchive: (project: ScheduleItem) => void;
+}) {
+  const active = projects.filter((project) => project.status === "active");
+  const history = projects.filter((project) => project.status !== "active");
+
+  function exportProject(project: ScheduleItem) {
+    const logs = entries.filter((entry) => entry.itemId === project.id && entry.note).sort((a, b) => b.entryDate.localeCompare(a.entryDate));
+    const text = `# ${project.title}｜项目推进记录\n\n${logs.map((entry) => `## ${formatDay(entry.entryDate)} · ${entry.progress ?? project.progress}%\n\n${entry.note}`).join("\n\n")}`;
+    const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${project.title}-推进记录.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <section className="project-board">
+      <div className="project-board-head"><div><p>ACTIVE PROJECTS</p><h2>正在推进的项目</h2></div><span>{active.length} 个项目</span></div>
+      <div className="project-card-grid">
+        {active.map((project) => {
+          const todayEntry = entries.find((entry) => entry.itemId === project.id && entry.entryDate === today);
+          const logs = entries.filter((entry) => entry.itemId === project.id && entry.note);
+          return (
+            <article className={`project-card ${todayEntry ? "touched" : ""}`} key={project.id}>
+              <div className="project-card-top"><span className={`priority-pill ${project.priority}`}>{PRIORITY_LABELS[project.priority]}</span><div><button onClick={() => onEdit(project)}>编辑</button><button onClick={() => onArchive(project)}>结束</button></div></div>
+              <h3>{project.title}</h3>
+              <p>{project.note || "这是一个持续推进的项目。"}</p>
+              <div className="project-progress-line"><i style={{ width: `${project.progress}%` }} /><span>{project.progress}%</span></div>
+              <div className="project-card-meta"><span>{todayEntry ? "✓ 今日已推进" : project.dueDate ? `截止 ${formatDay(project.dueDate)}` : "没有截止日期"}</span><small>{logs.length} 条推进笔记</small></div>
+              {todayEntry?.note && <blockquote>“{todayEntry.note}”</blockquote>}
+              <div className="project-card-actions"><button onClick={() => onUpdate(project)}>{todayEntry ? "更新今日进度" : "推进一下"}</button>{logs.length > 0 && <button onClick={() => exportProject(project)}>下载记录</button>}</div>
+            </article>
+          );
+        })}
+        {active.length === 0 && <div className="project-board-empty"><span>◇</span><h3>还没有正在推进的项目</h3><p>回到“今日”，创建一个持续项目。</p></div>}
+      </div>
+      {history.length > 0 && <div className="project-history"><h3>项目历史</h3>{history.map((project) => <div key={project.id}><span>{project.status === "completed" ? "✓" : "—"}</span><strong>{project.title}</strong><small>{project.status === "completed" ? "已完成" : "已结束"}</small><em>{project.progress}%</em></div>)}</div>}
+    </section>
+  );
+}
+
+function ScheduleCalendar({ items, entries, today }: { items: ScheduleItem[]; entries: ScheduleEntry[]; today: string }) {
+  const [month, setMonth] = useState(() => {
+    const date = parseDate(today);
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  });
+  const [selected, setSelected] = useState(today);
+  const firstOffset = (month.getDay() + 6) % 7;
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(month.getFullYear(), month.getMonth(), index - firstOffset + 1);
+    return { value: toLocalDate(date), number: date.getDate(), muted: date.getMonth() !== month.getMonth() };
+  });
+
+  function relevantForDate(item: ScheduleItem, date: string) {
+    if (date < item.startDate || (item.completedDate && date > item.completedDate)) return false;
+    if (item.status === "archived" && !entries.some((entry) => entry.itemId === item.id && entry.entryDate === date)) return false;
+    if (item.kind === "project") return date <= today;
+    if (item.repeatDaily) return date <= today;
+    return date >= item.startDate && date <= (item.completedDate ?? today);
+  }
+
+  const selectedItems = items.filter((item) => relevantForDate(item, selected));
+  const selectedEntries = entries.filter((entry) => entry.entryDate === selected);
+
+  return (
+    <section className="schedule-calendar-view">
+      <div className="schedule-calendar-card">
+        <div className="schedule-calendar-toolbar"><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>←</button><div><small>MY COORDINATES</small><strong>{month.getFullYear()} 年 {month.getMonth() + 1} 月</strong></div><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>→</button></div>
+        <div className="schedule-weekdays">{WEEKDAYS.map((day) => <span key={day}>{day}</span>)}</div>
+        <div className="schedule-month-grid">
+          {cells.map((cell) => {
+            const dayItems = items.filter((item) => relevantForDate(item, cell.value));
+            const dayEntries = entries.filter((entry) => entry.entryDate === cell.value);
+            return (
+              <button key={cell.value} className={`${cell.muted ? "muted" : ""} ${cell.value === today ? "today" : ""} ${cell.value === selected ? "selected" : ""}`} onClick={() => setSelected(cell.value)}>
+                <span>{cell.number}</span>
+                <div>{dayItems.slice(0, 3).map((item) => <i key={item.id} className={`${item.kind} ${dayEntries.some((entry) => entry.itemId === item.id) ? "done" : ""}`} />)}</div>
+                {dayItems.length > 3 && <small>+{dayItems.length - 3}</small>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <aside className="schedule-day-detail">
+        <p>{selected === today ? "TODAY" : "DAY RECORD"}</p>
+        <h2>{formatLongDay(selected)}</h2>
+        {selectedItems.length === 0 ? <div className="schedule-day-empty"><span>·</span><strong>这一天很轻</strong><small>没有事项或项目记录</small></div> : <div className="schedule-day-items">{selectedItems.map((item) => { const entry = selectedEntries.find((record) => record.itemId === item.id); return <article key={item.id}><span className={entry ? "done" : ""}>{entry ? "✓" : item.kind === "project" ? "◇" : "○"}</span><div><small>{item.kind === "project" ? "项目" : item.repeatDaily ? "每日事项" : "一次事项"}</small><strong>{item.title}</strong>{entry?.note && <p>“{entry.note}”</p>}</div>{item.kind === "project" && <em>{entry?.progress ?? item.progress}%</em>}</article>; })}</div>}
+      </aside>
+    </section>
   );
 }

@@ -18,9 +18,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const baseUrl = new URL(`${protocol}://${host}`);
-  const title = "一分小事｜每天一分钟，坚持二十一天";
-  const description = "每天给一件重要的小事一分钟，用二十一天把它变成生活的一部分。";
-  const imageUrl = new URL("/og.png", baseUrl).toString();
+  const title = "浮岛工作台｜长期习惯与个人日程";
+  const description = "在一个轻盈的像素小世界里，坚持长期习惯，清楚推进每天的事项与项目。";
+  const imageUrl = new URL("/og-workbench.png", baseUrl).toString();
 
   return {
     metadataBase: baseUrl,
@@ -30,7 +30,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: "website",
-      images: [{ url: imageUrl, width: 1731, height: 909, alt: "一分小事" }],
+      images: [{ url: imageUrl, width: 1727, height: 911, alt: "浮岛工作台" }],
     },
     twitter: {
       card: "summary_large_image",

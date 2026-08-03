@@ -14,10 +14,10 @@ export default async function Home() {
           <div className="brand-mark" aria-hidden="true">
             1′
           </div>
-          <p className="eyebrow">一分小事</p>
-          <h1>把重要的事，<br />缩小到一分钟。</h1>
+          <p className="eyebrow">浮岛工作台</p>
+          <h1>长期的事慢慢生长，<br />眼前的事清楚推进。</h1>
           <p className="signin-copy">
-            每天完成一件小事，连续二十一天。你的打卡、日历与备注都会安全地跟着你。
+            一个属于你的私人小世界：用“一分小事”坚持长期习惯，用“个人日程”安排事项与项目。
           </p>
           <a className="primary-button signin-button" href={chatGPTSignInPath("/")}>
             使用 ChatGPT 登录
