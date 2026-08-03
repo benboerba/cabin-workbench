@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `onboarding_version` integer DEFAULT 0 NOT NULL;

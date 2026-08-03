@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ONBOARDING_VERSION } from "../lib/onboarding";
 
 type Challenge = {
   id: string;
@@ -84,7 +85,7 @@ type ScheduleEntry = {
   updatedAt: string;
 };
 
-type UserSummary = { displayName: string; email: string };
+type UserSummary = { displayName: string; email: string; onboardingVersion: number };
 
 const CHALLENGE_COLORS = ["#e36a44", "#5b8272", "#c49a45"];
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -172,19 +173,173 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function HabitApp({ user }: { user: UserSummary }) {
   const [activeTool, setActiveTool] = useState<"world" | "habit" | "schedule">("world");
+  const [guideOpen, setGuideOpen] = useState(user.onboardingVersion < ONBOARDING_VERSION);
+  const [seenGuideVersion, setSeenGuideVersion] = useState(user.onboardingVersion);
 
-  if (activeTool === "habit") {
-    return <HabitWorkspace user={user} onBack={() => setActiveTool("world")} />;
+  function rememberGuide() {
+    setGuideOpen(false);
+    if (seenGuideVersion >= ONBOARDING_VERSION) return;
+    setSeenGuideVersion(ONBOARDING_VERSION);
+    void api("/api/onboarding", {
+      method: "POST",
+      body: JSON.stringify({ version: ONBOARDING_VERSION }),
+    }).catch(() => {
+      setSeenGuideVersion(user.onboardingVersion);
+    });
   }
-  if (activeTool === "schedule") {
-    return <ScheduleWorkspace user={user} onBack={() => setActiveTool("world")} />;
+
+  function startFromGuide(tool: "habit" | "schedule") {
+    rememberGuide();
+    setActiveTool(tool);
   }
+
+  const currentView = activeTool === "habit"
+    ? <HabitWorkspace user={user} onBack={() => setActiveTool("world")} />
+    : activeTool === "schedule"
+      ? <ScheduleWorkspace user={user} onBack={() => setActiveTool("world")} />
+      : (
+        <WorldWorkbench
+          user={user}
+          openHabit={() => setActiveTool("habit")}
+          openSchedule={() => setActiveTool("schedule")}
+        />
+      );
+
   return (
-    <WorldWorkbench
-      user={user}
-      openHabit={() => setActiveTool("habit")}
-      openSchedule={() => setActiveTool("schedule")}
-    />
+    <>
+      {currentView}
+      <button className="guide-replay-button" onClick={() => setGuideOpen(true)} aria-label="打开新手指引">
+        <span>?</span>
+        <strong>新手指引</strong>
+        <small>随时回顾</small>
+      </button>
+      {guideOpen && (
+        <OnboardingGuide
+          onClose={rememberGuide}
+          onOpenHabit={() => startFromGuide("habit")}
+          onOpenSchedule={() => startFromGuide("schedule")}
+        />
+      )}
+    </>
+  );
+}
+
+const GUIDE_STEPS = [
+  {
+    key: "map",
+    index: "01",
+    eyebrow: "WELCOME · 木屋地图",
+    title: "先认清这座木屋，再开始今天。",
+    copy: "这里不是一张塞满功能的表格，而是你的统一入口。工作间负责行动，生活市集和娱乐角负责快速抵达常用网站。",
+    points: ["工作间：长期习惯与短线日程", "生活市集：常用购物入口", "娱乐角：常用内容与视频网站"],
+  },
+  {
+    key: "habit",
+    index: "02",
+    eyebrow: "LONG TERM · 长线养成",
+    title: "一分小事，把习惯缩小到一分钟。",
+    copy: "选择一件值得坚持的小事，每天主动开始 60 秒。倒计时结束自动打卡，连续完成 21 天后再更换新习惯。",
+    points: ["每天最多同时坚持 3 件", "中断后连续天数重新开始", "完成后可写备注并汇总复习"],
+  },
+  {
+    key: "schedule",
+    index: "03",
+    eyebrow: "SHORT TERM · 短线执行",
+    title: "个人日程，让眼前的事持续向前。",
+    copy: "普通事项可以安排当天或每日重复；项目不拆子任务，只记录截止日期、优先级和你亲手更新的进度。",
+    points: ["每日事项每天生成一条记录", "未结束的项目每天继续提醒", "当天推进过的项目会自动往后排"],
+  },
+  {
+    key: "start",
+    index: "04",
+    eyebrow: "FIRST QUEST · 第一个任务",
+    title: "现在，选择你的第一条路线。",
+    copy: "想培养一个长期习惯，就从“一分小事”开始；想把今天和项目安排清楚，就进入“个人日程”。之后可以随时点击右侧的「新手指引」回来查看。",
+    points: ["长线：一天一分钟，连续坚持 21 天", "短线：今天做什么，项目推进到哪里"],
+  },
+] as const;
+
+function OnboardingGuide({
+  onClose,
+  onOpenHabit,
+  onOpenSchedule,
+}: {
+  onClose: () => void;
+  onOpenHabit: () => void;
+  onOpenSchedule: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const current = GUIDE_STEPS[step];
+  const finalStep = step === GUIDE_STEPS.length - 1;
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="guide-overlay" role="presentation">
+      <section className="guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+        <aside className="guide-rail">
+          <div className="guide-mark"><span>?</span><i /></div>
+          <p>PLAYER GUIDE</p>
+          <h3>木屋使用说明</h3>
+          <ol aria-label="指引步骤">
+            {GUIDE_STEPS.map((item, index) => (
+              <li key={item.key} className={index === step ? "active" : index < step ? "done" : ""}>
+                <button onClick={() => setStep(index)} aria-label={`查看第${index + 1}步：${item.title}`}>
+                  <span>{index < step ? "✓" : item.index}</span>
+                  <i />
+                </button>
+              </li>
+            ))}
+          </ol>
+          <small>按 Esc 也可以退出</small>
+        </aside>
+
+        <div className="guide-content">
+          <button className="guide-close" onClick={onClose} aria-label="关闭新手指引">×</button>
+          <div className={`guide-scene guide-scene-${current.key}`} aria-hidden="true">
+            {current.key === "map" && <><span className="guide-room">工</span><span className="guide-room">生</span><span className="guide-room">娱</span></>}
+            {current.key === "habit" && <div className="guide-hourglass"><span>1′</span><i /><b /></div>}
+            {current.key === "schedule" && <div className="guide-calendar"><span>今</span><i /><i /><i /></div>}
+            {current.key === "start" && <div className="guide-compass"><span>长</span><i>短</i></div>}
+          </div>
+
+          <div className="guide-copy">
+            <p>{current.eyebrow}</p>
+            <h2 id="guide-title">{current.title}</h2>
+            <span>{current.copy}</span>
+            <ul>
+              {current.points.map((point) => <li key={point}><i>✓</i>{point}</li>)}
+            </ul>
+          </div>
+
+          {finalStep && (
+            <div className="guide-route-choices">
+              <button onClick={onOpenHabit}><span>1′</span><div><small>长期养成</small><strong>进入一分小事</strong></div><em>→</em></button>
+              <button onClick={onOpenSchedule}><span>▦</span><div><small>短线执行</small><strong>进入个人日程</strong></div><em>→</em></button>
+            </div>
+          )}
+
+          <footer className="guide-actions">
+            <button className="guide-skip" onClick={onClose}>{finalStep ? "先看看木屋" : "跳过引导"}</button>
+            <div>
+              {step > 0 && <button className="guide-back" onClick={() => setStep((value) => value - 1)}>上一步</button>}
+              {!finalStep && <button className="guide-next" onClick={() => setStep((value) => value + 1)}>下一步 <span>→</span></button>}
+            </div>
+          </footer>
+        </div>
+      </section>
+    </div>
   );
 }
 

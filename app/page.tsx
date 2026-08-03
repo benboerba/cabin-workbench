@@ -33,6 +33,7 @@ export default async function Home() {
       user={{
         displayName: user.displayName,
         email: user.email,
+        onboardingVersion: user.onboardingVersion,
       }}
     />
   );

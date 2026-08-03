@@ -12,6 +12,7 @@ export type AppUser = {
   displayName: string;
   email: string;
   fullName: string | null;
+  onboardingVersion: number;
 };
 
 export function normalizeEmail(value: unknown): string | null {
@@ -101,6 +102,7 @@ export async function getSessionUser(): Promise<AppUser | null> {
       userId: users.id,
       displayName: users.displayName,
       email: users.email,
+      onboardingVersion: users.onboardingVersion,
       expiresAt: authSessions.expiresAt,
     })
     .from(authSessions)
@@ -119,6 +121,7 @@ export async function getSessionUser(): Promise<AppUser | null> {
     displayName: row.displayName,
     email: row.email,
     fullName: row.displayName,
+    onboardingVersion: row.onboardingVersion,
   };
 }
 

@@ -24,10 +24,17 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.match(app, /今天的推进已记录/);
   assert.match(app, /今天，给重要的小事/);
   assert.match(app, /正在坚持/);
+  assert.match(app, /新手指引/);
+  assert.match(app, /LONG TERM · 长线养成/);
+  assert.match(app, /SHORT TERM · 短线执行/);
+  assert.match(app, /进入一分小事/);
+  assert.match(app, /进入个人日程/);
   assert.match(app, /小事日历/);
   assert.match(app, /紧急暂停/);
   assert.match(app, /十分钟内回来/);
   assert.match(styles, /timer-overlay/);
+  assert.match(styles, /guide-replay-button/);
+  assert.match(styles, /guide-dialog/);
   assert.match(portalLinks, /https:\/\/www\.taobao\.com\//);
   assert.match(portalLinks, /https:\/\/www\.jd\.com\//);
   assert.match(app, /前往\{link\.label\}/);
@@ -56,6 +63,7 @@ test("uses email identity and durable server storage", async () => {
   assert.match(schema, /export const scheduleItems/);
   assert.match(schema, /export const scheduleEntries/);
   assert.match(schema, /export const portalLinks/);
+  assert.match(schema, /onboardingVersion/);
   assert.match(auth, /scrypt-v1/);
   assert.match(auth, /httpOnly:\s*true/);
   assert.match(auth, /timingSafeEqual/);
