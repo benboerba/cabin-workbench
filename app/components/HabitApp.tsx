@@ -1219,7 +1219,7 @@ function CabinFoyer({
       <section className="foyer-stage" aria-label="木屋的三个房间">
         <div className="foyer-title">
           <p>WELCOME TO YOUR CABIN</p>
-          <h1>今天，想进入哪一间？</h1>
+          <h1>今天，想先做点什么？</h1>
           <span>工作、生活与娱乐，各有自己的位置。</span>
         </div>
 
