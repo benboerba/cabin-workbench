@@ -3,10 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the pixel-cabin workbench and both tools", async () => {
-  const [page, app, styles] = await Promise.all([
+  const [page, app, styles, portalLinks] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/HabitApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/portal-links.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /一分小事/);
@@ -27,6 +28,9 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.match(app, /紧急暂停/);
   assert.match(app, /十分钟内回来/);
   assert.match(styles, /timer-overlay/);
+  assert.match(portalLinks, /https:\/\/www\.taobao\.com\//);
+  assert.match(portalLinks, /https:\/\/www\.jd\.com\//);
+  assert.match(app, /前往\{link\.label\}/);
   assert.doesNotMatch(page, /codex-preview|SkeletonPreview/);
 });
 

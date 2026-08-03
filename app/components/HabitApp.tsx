@@ -123,6 +123,14 @@ function formatLongDay(value: string) {
   }).format(date);
 }
 
+function formatPortalHost(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return value;
+  }
+}
+
 function getChallengeStreak(challengeId: string, checkins: Checkin[], today: string) {
   const dates = new Set(
     checkins
@@ -1390,7 +1398,12 @@ function PortalRoom({
               >
                 <a href={link.url} target="_blank" rel="noreferrer" aria-label={`打开${link.label}`} onClick={(event) => manage && event.preventDefault()}>
                   <span className="portal-link-icon" style={{ "--portal-color": link.color } as React.CSSProperties}>{link.icon}</span>
-                  <div><small>{life ? "SHOP" : "DISCOVER"} · 0{index + 1}</small><strong>{link.label}</strong><em>打开网站 ↗</em></div>
+                  <div>
+                    <small>{life ? "SHOP" : "DISCOVER"} · 0{index + 1}</small>
+                    <strong>{link.label}</strong>
+                    <span className="portal-link-url">{formatPortalHost(link.url)}</span>
+                    <em className="portal-jump-button">前往{link.label} ↗</em>
+                  </div>
                 </a>
                 {manage && (
                   <div className="portal-manage-controls">
