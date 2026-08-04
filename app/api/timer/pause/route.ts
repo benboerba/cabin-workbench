@@ -4,7 +4,7 @@ import { timerSessions } from "../../../../db/schema";
 import { requireApiUser } from "../../../lib/current-user";
 
 export async function POST(request: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ writable: true });
   if (auth.response) return auth.response;
   const { challengeId } = (await request.json()) as { challengeId?: unknown };
   if (typeof challengeId !== "string") {

@@ -6,7 +6,7 @@ import { requireApiUser } from "../../../lib/current-user";
 const PRIORITIES = new Set(["important", "normal", "later"]);
 
 export async function POST(request: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ writable: true });
   if (auth.response) return auth.response;
   const payload = (await request.json()) as Record<string, unknown>;
   const kind: "project" | "task" | null =

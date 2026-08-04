@@ -9,6 +9,7 @@ import {
   timerSessions,
 } from "../../../db/schema";
 import { requireApiUser } from "../../lib/current-user";
+import { getGuestDashboard } from "../../lib/guest-data";
 import { ensureDefaultPortalLinks } from "../../lib/portal-links";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requireApiUser();
   if (auth.response) return auth.response;
+  if (auth.user.edition === "guest") return Response.json(getGuestDashboard());
 
   const db = getDb();
   await ensureDefaultPortalLinks(auth.user.userId);

@@ -5,7 +5,7 @@ import { requireApiUser } from "../../lib/current-user";
 import { ONBOARDING_VERSION } from "../../lib/onboarding";
 
 export async function POST(request: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ writable: true });
   if (auth.response) return auth.response;
 
   let body: { version?: unknown };

@@ -1,6 +1,6 @@
 import { destroySession } from "../lib/auth";
 
-export async function GET(request: Request) {
+export async function GET() {
   await destroySession();
-  return Response.redirect(new URL("/", request.url), 303);
+  return new Response(null, { status: 303, headers: { location: "/" } });
 }

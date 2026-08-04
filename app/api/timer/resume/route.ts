@@ -5,7 +5,7 @@ import { isHabitDate } from "../../../lib/dates";
 import { requireApiUser } from "../../../lib/current-user";
 
 export async function POST(request: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ writable: true });
   if (auth.response) return auth.response;
   const payload = (await request.json()) as {
     challengeId?: unknown;

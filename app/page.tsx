@@ -21,8 +21,9 @@ export default async function Home() {
           <div className="signin-actions">
             <a className="primary-button signin-button" href="/auth?mode=login">邮箱登录</a>
             <a className="secondary-button signin-button" href="/auth?mode=register">注册账户</a>
+            <a className="guest-button signin-button" href="/guest"><span>◇</span> 游客体验 <small>只看不保存</small></a>
           </div>
-          <p className="privacy-note">无需验证码。登录后才能查看和保存你的私人记录</p>
+          <p className="privacy-note">无需验证码。游客可以查看功能，登录后才能保存自己的记录</p>
         </section>
       </main>
     );

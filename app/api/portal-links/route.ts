@@ -17,7 +17,7 @@ function safeUrl(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ writable: true });
   if (auth.response) return auth.response;
   const payload = (await request.json()) as Record<string, unknown>;
   const action = typeof payload.action === "string" ? payload.action : "create";

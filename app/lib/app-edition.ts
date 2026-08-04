@@ -1,4 +1,4 @@
-export type AppEdition = "local" | "server";
+export type AppEdition = "local" | "server" | "guest";
 
 export function getAppEdition(): AppEdition {
   return process.env.APP_MODE === "local" ? "local" : "server";

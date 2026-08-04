@@ -1469,6 +1469,9 @@ footer p {
   justify-content: center;
   gap: 10px;
 }
+.guest-button { flex-basis: 430px; gap: 8px; border: 1px solid #9a7a45; background: #f0dfb4; color: #564125; box-shadow: none; }
+.guest-button:hover { background: #e8d29e; transform: translateY(-1px); }
+.guest-button > span { color: #a75835; font-size: 16px; }.guest-button > small { color: #8e7855; font-size: 8px; }
 
 .auth-shell {
   min-height: 100vh;
@@ -2614,6 +2617,8 @@ footer p {
   backdrop-filter: blur(4px);
 }
 .local-edition-badge > span { color: #8eae79; font-size: 9px; text-shadow: 0 0 8px rgba(142,174,121,.7); }
+.local-edition-badge.guest-edition-badge { border-color: rgba(230,177,93,.72); background: rgba(103,54,31,.94); }
+.local-edition-badge.guest-edition-badge > span { color: #f1b85e; text-shadow: 0 0 8px rgba(241,184,94,.65); }
 .local-edition-badge strong,.local-edition-badge small { display: block; }
 .local-edition-badge strong { font-family: var(--serif); font-size: 11px; }
 .local-edition-badge small,.account-chip small,.world-user small { color: rgba(248,235,204,.58); font-size: 7px; }

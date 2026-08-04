@@ -89,7 +89,7 @@ type UserSummary = {
   displayName: string;
   email: string;
   onboardingVersion: number;
-  edition: "local" | "server";
+  edition: "local" | "server" | "guest";
 };
 
 const CHALLENGE_COLORS = ["#e36a44", "#5b8272", "#c49a45"];
@@ -213,10 +213,10 @@ export function HabitApp({ user }: { user: UserSummary }) {
   return (
     <>
       {currentView}
-      {user.edition === "local" && (
-        <div className="local-edition-badge" title="记录只保存在这台电脑的本地文件中">
+      {user.edition !== "server" && (
+        <div className={`local-edition-badge ${user.edition === "guest" ? "guest-edition-badge" : ""}`} title={user.edition === "guest" ? "游客模式不会保存任何操作" : "记录只保存在这台电脑的本地文件中"}>
           <span>●</span>
-          <div><strong>个人本地版</strong><small>数据保存在此电脑</small></div>
+          <div><strong>{user.edition === "guest" ? "游客体验" : "个人本地版"}</strong><small>{user.edition === "guest" ? "只读模式 · 不保存数据" : "数据保存在此电脑"}</small></div>
         </div>
       )}
       <button className="guide-replay-button" onClick={() => setGuideOpen(true)} aria-label="打开新手指引">
@@ -429,7 +429,7 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
           <div>
             <strong>{user.displayName}</strong>
-            {user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">退出</a>}
+            {user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">{user.edition === "guest" ? "退出体验" : "退出"}</a>}
           </div>
         </div>
       </header>
@@ -1411,7 +1411,7 @@ function CabinFoyer({
         <div className="world-date"><span>{formatLongDay(today)}</span><i />欢迎回来，选一间房开始</div>
         <div className="world-user" title={user.email}>
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName}</strong>{user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">退出</a>}</div>
+          <div><strong>{user.displayName}</strong>{user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">{user.edition === "guest" ? "退出体验" : "退出"}</a>}</div>
         </div>
       </header>
 

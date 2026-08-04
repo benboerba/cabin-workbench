@@ -57,6 +57,7 @@ test("uses email identity and durable server storage", async () => {
   assert.match(page, /getCurrentUser/);
   assert.match(page, /邮箱登录/);
   assert.match(page, /注册账户/);
+  assert.match(page, /游客体验/);
   assert.match(layout, /og-three-room-cabin\.png/);
   assert.match(schema, /export const users/);
   assert.match(schema, /export const authSessions/);
@@ -70,6 +71,7 @@ test("uses email identity and durable server storage", async () => {
   assert.match(auth, /scrypt-v1/);
   assert.match(auth, /httpOnly:\s*true/);
   assert.match(auth, /timingSafeEqual/);
+  assert.match(auth, /cabin_guest/);
   assert.match(database, /better-sqlite3/);
   assert.match(database, /journal_mode = WAL/);
   assert.match(gitignore, /\*\.pem/);

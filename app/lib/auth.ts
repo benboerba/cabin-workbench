@@ -6,6 +6,7 @@ import { authSessions, users } from "../../db/schema";
 import { getAppEdition, isLocalEdition, type AppEdition } from "./app-edition";
 
 const SESSION_COOKIE = "cabin_session";
+const GUEST_COOKIE = "cabin_guest";
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type AppUser = {
@@ -78,6 +79,13 @@ export async function createSession(userId: string): Promise<void> {
     path: "/",
     expires: expiresAt,
   });
+  cookieStore.set(GUEST_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.COOKIE_SECURE !== "false" && process.env.NODE_ENV === "production",
+    path: "/",
+    expires: new Date(0),
+  });
 }
 
 export async function destroySession(): Promise<void> {
@@ -95,13 +103,21 @@ export async function destroySession(): Promise<void> {
     path: "/",
     expires: new Date(0),
   });
+  cookieStore.set(GUEST_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.COOKIE_SECURE !== "false" && process.env.NODE_ENV === "production",
+    path: "/",
+    expires: new Date(0),
+  });
 }
 
 export async function getSessionUser(): Promise<AppUser | null> {
   if (isLocalEdition()) return getLocalUser();
 
-  const rawToken = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!rawToken) return null;
+  const cookieStore = await cookies();
+  const rawToken = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!rawToken) return cookieStore.get(GUEST_COOKIE)?.value === "1" ? getGuestUser() : null;
 
   const now = new Date().toISOString();
   const [row] = await getDb()
@@ -122,7 +138,7 @@ export async function getSessionUser(): Promise<AppUser | null> {
     )
     .limit(1);
 
-  if (!row) return null;
+  if (!row) return cookieStore.get(GUEST_COOKIE)?.value === "1" ? getGuestUser() : null;
   return {
     userId: row.userId,
     displayName: row.displayName,
@@ -130,6 +146,17 @@ export async function getSessionUser(): Promise<AppUser | null> {
     fullName: row.displayName,
     onboardingVersion: row.onboardingVersion,
     edition: getAppEdition(),
+  };
+}
+
+function getGuestUser(): AppUser {
+  return {
+    userId: "guest-read-only",
+    displayName: "游客",
+    email: "guest@cabin.local",
+    fullName: "游客",
+    onboardingVersion: 1,
+    edition: "guest",
   };
 }
 
