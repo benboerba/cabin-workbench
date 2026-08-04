@@ -34,6 +34,7 @@ export default async function Home() {
         displayName: user.displayName,
         email: user.email,
         onboardingVersion: user.onboardingVersion,
+        edition: user.edition,
       }}
     />
   );

@@ -2579,3 +2579,30 @@ footer p {
 @media (prefers-reduced-motion: reduce) {
   .guide-replay-button { animation: none; }
 }
+
+/* Personal local edition */
+.local-edition-badge {
+  position: fixed;
+  z-index: 179;
+  top: 88px;
+  right: 22px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border: 1px solid rgba(236,199,126,.55);
+  background: rgba(55,32,21,.9);
+  color: #f6e5bc;
+  box-shadow: 4px 5px rgba(24,10,6,.22);
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+.local-edition-badge > span { color: #8eae79; font-size: 9px; text-shadow: 0 0 8px rgba(142,174,121,.7); }
+.local-edition-badge strong,.local-edition-badge small { display: block; }
+.local-edition-badge strong { font-family: var(--serif); font-size: 11px; }
+.local-edition-badge small,.account-chip small,.world-user small { color: rgba(248,235,204,.58); font-size: 7px; }
+
+@media (max-width: 760px) {
+  .local-edition-badge { top: 76px; right: 10px; padding: 7px 9px; }
+  .local-edition-badge small { display: none; }
+}

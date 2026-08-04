@@ -3,6 +3,7 @@ import { and, eq, gt, lt } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { getDb } from "../../db";
 import { authSessions, users } from "../../db/schema";
+import { getAppEdition, isLocalEdition, type AppEdition } from "./app-edition";
 
 const SESSION_COOKIE = "cabin_session";
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -13,7 +14,11 @@ export type AppUser = {
   email: string;
   fullName: string | null;
   onboardingVersion: number;
+  edition: AppEdition;
 };
+
+const LOCAL_USER_ID = "local-personal-workbench";
+const LOCAL_USER_EMAIL = "local@cabin.local";
 
 export function normalizeEmail(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -93,6 +98,8 @@ export async function destroySession(): Promise<void> {
 }
 
 export async function getSessionUser(): Promise<AppUser | null> {
+  if (isLocalEdition()) return getLocalUser();
+
   const rawToken = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!rawToken) return null;
 
@@ -122,6 +129,43 @@ export async function getSessionUser(): Promise<AppUser | null> {
     email: row.email,
     fullName: row.displayName,
     onboardingVersion: row.onboardingVersion,
+    edition: getAppEdition(),
+  };
+}
+
+async function getLocalUser(): Promise<AppUser> {
+  const db = getDb();
+  const displayName = (process.env.LOCAL_DISPLAY_NAME?.trim() || "我的木屋").slice(0, 30);
+
+  await db
+    .insert(users)
+    .values({
+      id: LOCAL_USER_ID,
+      email: LOCAL_USER_EMAIL,
+      displayName,
+      passwordHash: "local-edition-no-password",
+    })
+    .onConflictDoNothing();
+
+  const [row] = await db
+    .select({
+      userId: users.id,
+      displayName: users.displayName,
+      email: users.email,
+      onboardingVersion: users.onboardingVersion,
+    })
+    .from(users)
+    .where(eq(users.id, LOCAL_USER_ID))
+    .limit(1);
+
+  if (!row) throw new Error("无法初始化个人本地版数据");
+  return {
+    userId: row.userId,
+    displayName: row.displayName,
+    email: row.email,
+    fullName: row.displayName,
+    onboardingVersion: row.onboardingVersion,
+    edition: "local",
   };
 }
 

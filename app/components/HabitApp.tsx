@@ -85,7 +85,12 @@ type ScheduleEntry = {
   updatedAt: string;
 };
 
-type UserSummary = { displayName: string; email: string; onboardingVersion: number };
+type UserSummary = {
+  displayName: string;
+  email: string;
+  onboardingVersion: number;
+  edition: "local" | "server";
+};
 
 const CHALLENGE_COLORS = ["#e36a44", "#5b8272", "#c49a45"];
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -208,6 +213,12 @@ export function HabitApp({ user }: { user: UserSummary }) {
   return (
     <>
       {currentView}
+      {user.edition === "local" && (
+        <div className="local-edition-badge" title="记录只保存在这台电脑的本地文件中">
+          <span>●</span>
+          <div><strong>个人本地版</strong><small>数据保存在此电脑</small></div>
+        </div>
+      )}
       <button className="guide-replay-button" onClick={() => setGuideOpen(true)} aria-label="打开新手指引">
         <span>?</span>
         <strong>新手指引</strong>
@@ -418,7 +429,7 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
           <div>
             <strong>{user.displayName}</strong>
-            <a href="/logout">退出</a>
+            {user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">退出</a>}
           </div>
         </div>
       </header>
@@ -1375,7 +1386,7 @@ function CabinFoyer({
         <div className="world-date"><span>{formatLongDay(today)}</span><i />欢迎回来，选一间房开始</div>
         <div className="world-user" title={user.email}>
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName}</strong><a href="/logout">退出</a></div>
+          <div><strong>{user.displayName}</strong>{user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">退出</a>}</div>
         </div>
       </header>
 
