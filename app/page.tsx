@@ -23,6 +23,14 @@ export default async function Home() {
             <a className="secondary-button signin-button" href="/auth?mode=register">注册账户</a>
             <a className="guest-button signin-button" href="/guest"><span>◇</span> 游客体验 <small>只看不保存</small></a>
           </div>
+          <details className="home-download-panel">
+            <summary><span>↓</span><div><strong>借鉴主包的工作台</strong><small>下载完整代码，在自己的电脑或服务器上使用</small></div><b>＋</b></summary>
+            <div className="home-download-options">
+              <a href="/downloads/cabin-workbench-local.zip" download><span>⌂</span><div><strong>个人本地版</strong><small>无需登录 · 本地文件保存</small></div><b>下载 ↓</b></a>
+              <a href="/downloads/cabin-workbench-server.zip" download><span>⇄</span><div><strong>多用户服务器版</strong><small>邮箱登录 · 账户数据隔离</small></div><b>下载 ↓</b></a>
+            </div>
+            <p>压缩包不包含任何用户记录、账号、密码或服务器密钥。</p>
+          </details>
           <p className="privacy-note">无需验证码。游客可以查看功能，登录后才能保存自己的记录</p>
         </section>
       </main>

@@ -29,9 +29,10 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.match(app, /SHORT TERM · 短线执行/);
   assert.match(app, /进入一分小事/);
   assert.match(app, /进入个人日程/);
-  assert.match(app, /借鉴主包的工作台/);
-  assert.match(app, /\/downloads\/cabin-workbench-local\.zip/);
-  assert.match(app, /\/downloads\/cabin-workbench-server\.zip/);
+  assert.match(page, /借鉴主包的工作台/);
+  assert.match(page, /\/downloads\/cabin-workbench-local\.zip/);
+  assert.match(page, /\/downloads\/cabin-workbench-server\.zip/);
+  assert.doesNotMatch(app, /借鉴主包的工作台/);
   assert.match(app, /小事日历/);
   assert.match(app, /紧急暂停/);
   assert.match(app, /十分钟内回来/);
