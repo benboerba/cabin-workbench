@@ -66,6 +66,16 @@ COOKIE_SECURE=true
 
 上线后通过 `/api/health` 检查应用和数据库状态。SQLite 备份时应同时处理数据库及 WAL 文件，推荐先使用 SQLite 的在线备份命令生成一致快照。
 
+如需部署在现有域名的子路径下，在构建和运行时设置同一个公开路径，例如：
+
+```dotenv
+NEXT_PUBLIC_BASE_PATH=/workbench
+```
+
+这样页面、接口、登录、静态资源和下载文件都会统一使用 `/workbench/` 前缀，不占用域名原有的根路径与 `/api`。
+
+`bobjennies.click` 的 Nginx location 模板位于 `deploy/bobjennies-workbench.locations.conf`。
+
 ### 阿里云部署
 
 阿里云模板使用独立的 Node.js 22 运行时，不替换服务器上已有的 Node.js 版本：

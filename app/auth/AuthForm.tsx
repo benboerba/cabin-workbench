@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { withBasePath } from "../lib/base-path";
 
 type Mode = "login" | "register";
 
@@ -29,7 +30,7 @@ export function AuthForm() {
     };
 
     try {
-      const response = await fetch(`/api/auth/${mode}`, {
+      const response = await fetch(withBasePath(`/api/auth/${mode}`), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),

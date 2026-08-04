@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { withBasePath } from "../lib/base-path";
 
 export async function GET() {
   const cookieStore = await cookies();
@@ -9,5 +10,5 @@ export async function GET() {
     path: "/",
     maxAge: 24 * 60 * 60,
   });
-  return new Response(null, { status: 303, headers: { location: "/" } });
+  return new Response(null, { status: 303, headers: { location: withBasePath("/") } });
 }

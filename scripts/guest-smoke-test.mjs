@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = String(4800 + Math.floor(Math.random() * 300));
-const baseUrl = `http://127.0.0.1:${port}`;
+const testBasePath = process.env.TEST_BASE_PATH || "";
+const baseUrl = `http://127.0.0.1:${port}${testBasePath}`;
 const child = spawn(path.join(root, "node_modules", ".bin", "next"), ["start", "--hostname", "127.0.0.1", "--port", port], {
   cwd: root,
   env: {
@@ -14,6 +15,7 @@ const child = spawn(path.join(root, "node_modules", ".bin", "next"), ["start", "
     DATABASE_PATH: path.join(root, ".codex_work", `guest-smoke-${Date.now()}.db`),
     COOKIE_SECURE: "false",
     NEXT_TELEMETRY_DISABLED: "1",
+    NEXT_PUBLIC_BASE_PATH: testBasePath,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -27,7 +29,7 @@ try {
 
   const entry = await fetch(`${baseUrl}/guest`, { redirect: "manual" });
   assert.equal(entry.status, 303);
-  assert.equal(entry.headers.get("location"), "/");
+  assert.equal(entry.headers.get("location"), `${testBasePath}/` || "/");
   const cookie = entry.headers.get("set-cookie")?.split(";", 1)[0];
   assert.equal(cookie, "cabin_guest=1");
 

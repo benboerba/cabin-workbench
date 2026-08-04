@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ONBOARDING_VERSION } from "../lib/onboarding";
+import { withBasePath } from "../lib/base-path";
 
 type Challenge = {
   id: string;
@@ -167,7 +168,7 @@ function isSessionUsable(session: TimerSession, today: string) {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(withBasePath(path), {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
@@ -238,8 +239,8 @@ export function HabitApp({ user }: { user: UserSummary }) {
             <h2 id="download-modal-title">把这座工作台带回去</h2>
             <span>选择适合你的版本。压缩包只包含公开代码，不包含用户记录、账号、密码或服务器密钥。</span>
             <div className="global-download-options">
-              <a href="/downloads/cabin-workbench-local.zip" download><i>⌂</i><div><small>PERSONAL · LOCAL</small><strong>个人本地版</strong><p>无需登录，一条命令启动；数据保存在自己的电脑。</p></div><b>下载 ↓</b></a>
-              <a href="/downloads/cabin-workbench-server.zip" download><i>⇄</i><div><small>MULTI-USER · SERVER</small><strong>多用户服务器版</strong><p>邮箱登录与账户隔离，适合部署后分享给其他人。</p></div><b>下载 ↓</b></a>
+              <a href={withBasePath("/downloads/cabin-workbench-local.zip")} download><i>⌂</i><div><small>PERSONAL · LOCAL</small><strong>个人本地版</strong><p>无需登录，一条命令启动；数据保存在自己的电脑。</p></div><b>下载 ↓</b></a>
+              <a href={withBasePath("/downloads/cabin-workbench-server.zip")} download><i>⇄</i><div><small>MULTI-USER · SERVER</small><strong>多用户服务器版</strong><p>邮箱登录与账户隔离，适合部署后分享给其他人。</p></div><b>下载 ↓</b></a>
             </div>
           </section>
         </div>
@@ -449,7 +450,7 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
           <div>
             <strong>{user.displayName}</strong>
-            {user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">{user.edition === "guest" ? "退出体验" : "退出"}</a>}
+            {user.edition === "local" ? <small>个人本地版</small> : <a href={withBasePath("/logout")}>{user.edition === "guest" ? "退出体验" : "退出"}</a>}
           </div>
         </div>
       </header>
@@ -1407,7 +1408,7 @@ function CabinFoyer({
         <div className="world-date"><span>{formatLongDay(today)}</span><i />欢迎回来，选一间房开始</div>
         <div className="world-user" title={user.email}>
           <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName}</strong>{user.edition === "local" ? <small>个人本地版</small> : <a href="/logout">{user.edition === "guest" ? "退出体验" : "退出"}</a>}</div>
+          <div><strong>{user.displayName}</strong>{user.edition === "local" ? <small>个人本地版</small> : <a href={withBasePath("/logout")}>{user.edition === "guest" ? "退出体验" : "退出"}</a>}</div>
         </div>
       </header>
 

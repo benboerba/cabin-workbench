@@ -43,6 +43,7 @@ const child = spawn(nextBinary, ["dev", "--webpack", "--hostname", host, "--port
     APP_MODE: "local",
     DATABASE_PATH: dataPath,
     COOKIE_SECURE: "false",
+    NEXT_PUBLIC_BASE_PATH: "",
     NEXT_TELEMETRY_DISABLED: "1",
   },
   stdio: "inherit",

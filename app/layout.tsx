@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { withBasePath } from "./lib/base-path";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -9,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const baseUrl = new URL(`${protocol}://${host}`);
   const title = "木屋工作台｜工作、生活与娱乐";
   const description = "一座属于你的像素木屋：在工作间推进事情，在生活市集快速抵达，在娱乐角自在放松。";
-  const imageUrl = new URL("/og-three-room-cabin.png", baseUrl).toString();
+  const imageUrl = new URL(withBasePath("/og-three-room-cabin.png"), baseUrl).toString();
 
   return {
     metadataBase: baseUrl,
