@@ -179,6 +179,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export function HabitApp({ user }: { user: UserSummary }) {
   const [activeTool, setActiveTool] = useState<"world" | "habit" | "schedule">("world");
   const [guideOpen, setGuideOpen] = useState(user.onboardingVersion < ONBOARDING_VERSION);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
   const [seenGuideVersion, setSeenGuideVersion] = useState(user.onboardingVersion);
 
   function rememberGuide() {
@@ -224,6 +225,25 @@ export function HabitApp({ user }: { user: UserSummary }) {
         <strong>新手指引</strong>
         <small>随时回顾</small>
       </button>
+      <button className="global-download-button" onClick={() => setDownloadsOpen(true)} aria-label="下载木屋工作台代码">
+        <span>↓</span>
+        <strong>借鉴主包的工作台</strong>
+        <small>下载两个版本</small>
+      </button>
+      {downloadsOpen && (
+        <div className="download-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDownloadsOpen(false)}>
+          <section className="download-modal" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+            <button className="download-modal-close" onClick={() => setDownloadsOpen(false)} aria-label="关闭">×</button>
+            <p>PACK THE CABIN · SOURCE CODE</p>
+            <h2 id="download-modal-title">把这座工作台带回去</h2>
+            <span>选择适合你的版本。压缩包只包含公开代码，不包含用户记录、账号、密码或服务器密钥。</span>
+            <div className="global-download-options">
+              <a href="/downloads/cabin-workbench-local.zip" download><i>⌂</i><div><small>PERSONAL · LOCAL</small><strong>个人本地版</strong><p>无需登录，一条命令启动；数据保存在自己的电脑。</p></div><b>下载 ↓</b></a>
+              <a href="/downloads/cabin-workbench-server.zip" download><i>⇄</i><div><small>MULTI-USER · SERVER</small><strong>多用户服务器版</strong><p>邮箱登录与账户隔离，适合部署后分享给其他人。</p></div><b>下载 ↓</b></a>
+            </div>
+          </section>
+        </div>
+      )}
       {guideOpen && (
         <OnboardingGuide
           onClose={rememberGuide}
