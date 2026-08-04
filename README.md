@@ -45,6 +45,10 @@ npm test
 npm run local:smoke
 ```
 
+## 生成公开下载包
+
+提交代码后运行 `npm run package:editions`，会在 `public/downloads/` 生成个人本地版和多用户服务器版两个 ZIP。压缩包只取 Git 已跟踪的公开文件，因此不会包含数据库、环境变量、密钥、依赖目录或构建缓存。
+
 ## EC2 部署
 
 生产目录约定为 `/home/ec2-user/apps/cabin-workbench`，数据保存在 `/home/ec2-user/data/cabin-workbench/oneminute.db`。部署模板位于 `deploy/`：

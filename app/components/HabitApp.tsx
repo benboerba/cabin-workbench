@@ -1130,6 +1130,7 @@ function WorldWorkbench({
 }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
   const [room, setRoom] = useState<"foyer" | "work" | "life" | "entertainment">("foyer");
   const [view, setView] = useState({ x: 0, y: 0 });
   const today = toLocalDate();
@@ -1300,6 +1301,8 @@ function WorldWorkbench({
         <button onClick={openHabit}><span className="dock-habit">1′</span><div><small>长期习惯</small><strong>一分小事</strong></div></button>
         <i />
         <button onClick={openSchedule}><span className="dock-schedule">▦</span><div><small>短线执行</small><strong>个人日程</strong></div></button>
+        <i />
+        <button className="borrow-workbench-button" onClick={() => setDownloadsOpen(true)}><span>↓</span><div><small>TAKE IT HOME</small><strong>借鉴主包的工作台</strong></div></button>
       </nav>
 
       {toolsOpen && (
@@ -1319,6 +1322,28 @@ function WorldWorkbench({
                 <div><small>SHORT TERM</small><h3>个人日程</h3><p>让事项每天出现，让项目持续向前。</p><em>{activeSchedule.length} 件正在推进 →</em></div>
               </button>
             </div>
+          </section>
+        </div>
+      )}
+
+      {downloadsOpen && (
+        <div className="world-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDownloadsOpen(false)}>
+          <section className="tool-library download-library" role="dialog" aria-modal="true" aria-labelledby="download-library-title">
+            <button className="world-modal-close" onClick={() => setDownloadsOpen(false)} aria-label="关闭">×</button>
+            <p>PACK THE CABIN · SOURCE CODE</p>
+            <h2 id="download-library-title">把这座工作台带回去</h2>
+            <span className="tool-library-copy">两个压缩包都只包含公开代码，不包含任何用户记录、账号、密码或服务器密钥。</span>
+            <div className="edition-download-grid">
+              <a className="edition-download-card local-download" href="/downloads/cabin-workbench-local.zip" download>
+                <span className="edition-download-icon">⌂</span>
+                <div><small>PERSONAL · LOCAL</small><h3>个人本地版</h3><p>无需登录，一条命令启动；数据保存在自己电脑的单个文件中。</p><ul><li>适合自己使用</li><li>Agent 可直接启动</li><li>包含完整功能</li></ul><em>下载本地版代码 <b>↓</b></em></div>
+              </a>
+              <a className="edition-download-card server-download" href="/downloads/cabin-workbench-server.zip" download>
+                <span className="edition-download-icon">⇄</span>
+                <div><small>MULTI-USER · SERVER</small><h3>多用户服务器版</h3><p>支持邮箱注册、登录和用户隔离，适合部署后分享给其他人。</p><ul><li>邮箱密码登录</li><li>账户数据隔离</li><li>包含部署模板</li></ul><em>下载服务器版代码 <b>↓</b></em></div>
+              </a>
+            </div>
+            <p className="download-license-note">下载后可借鉴、修改和部署。运行方法已写在压缩包的说明文档中。</p>
           </section>
         </div>
       )}

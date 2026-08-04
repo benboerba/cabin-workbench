@@ -45,3 +45,5 @@ next-env.d.ts
 /.data/
 /.codex_work/
 /local-data/
+/public/downloads/*.zip
+/public/downloads/manifest.json
