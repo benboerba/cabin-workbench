@@ -30,11 +30,15 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.match(app, /进入一分小事/);
   assert.match(app, /进入个人日程/);
   assert.match(app, /借鉴主包的工作台/);
+  assert.match(app, /global-utility-actions/);
   assert.match(app, /\/downloads\/cabin-workbench-local\.zip/);
   assert.match(app, /\/downloads\/cabin-workbench-server\.zip/);
   assert.doesNotMatch(page, /借鉴主包的工作台/);
   assert.match(app, /小事日历/);
   assert.match(app, /紧急暂停/);
+  assert.match(app, /游客体验不会保存打卡记录/);
+  assert.match(app, /timer-end-button/);
+  assert.match(app, /guest-timer-/);
   assert.match(app, /十分钟内回来/);
   assert.match(styles, /timer-overlay/);
   assert.match(styles, /guide-replay-button/);
@@ -60,6 +64,8 @@ test("uses email identity and durable server storage", async () => {
   assert.match(page, /注册账户/);
   assert.match(page, /游客体验/);
   assert.match(layout, /og-three-room-cabin\.png/);
+  assert.match(layout, /viewportFit:\s*"cover"/);
+  assert.match(layout, /width:\s*"device-width"/);
   assert.match(schema, /export const users/);
   assert.match(schema, /export const authSessions/);
   assert.match(schema, /export const challenges/);

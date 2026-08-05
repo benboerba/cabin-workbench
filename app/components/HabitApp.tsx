@@ -221,16 +221,18 @@ export function HabitApp({ user }: { user: UserSummary }) {
           <div><strong>{user.edition === "guest" ? "游客体验" : "个人本地版"}</strong><small>{user.edition === "guest" ? "只读模式 · 不保存数据" : "数据保存在此电脑"}</small></div>
         </div>
       )}
-      <button className="guide-replay-button" onClick={() => setGuideOpen(true)} aria-label="打开新手指引">
-        <span>?</span>
-        <strong>新手指引</strong>
-        <small>随时回顾</small>
-      </button>
-      <button className="global-download-button" onClick={() => setDownloadsOpen(true)} aria-label="下载木屋工作台代码">
-        <span>↓</span>
-        <strong>借鉴主包的工作台</strong>
-        <small>下载两个版本</small>
-      </button>
+      <div className="global-utility-actions">
+        <button className="guide-replay-button" onClick={() => setGuideOpen(true)} aria-label="打开新手指引">
+          <span>?</span>
+          <strong>新手指引</strong>
+          <small>随时回顾</small>
+        </button>
+        <button className="global-download-button" onClick={() => setDownloadsOpen(true)} aria-label="下载木屋工作台代码">
+          <span>↓</span>
+          <strong>借鉴主包的工作台</strong>
+          <small>下载两个版本</small>
+        </button>
+      </div>
       {downloadsOpen && (
         <div className="download-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDownloadsOpen(false)}>
           <section className="download-modal" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
@@ -581,6 +583,7 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
         <TimerExperience
           challenge={timerChallenge}
           existingSession={openSession}
+          isGuest={user.edition === "guest"}
           today={today}
           onClose={() => setTimerChallenge(null)}
           onCompleted={handleCompleted}
@@ -889,6 +892,7 @@ function NotesArchive({
 function TimerExperience({
   challenge,
   existingSession,
+  isGuest,
   today,
   onClose,
   onCompleted,
@@ -896,6 +900,7 @@ function TimerExperience({
 }: {
   challenge: Challenge;
   existingSession?: TimerSession;
+  isGuest: boolean;
   today: string;
   onClose: () => void;
   onCompleted: (checkin: Checkin, challengeCompleted: boolean) => Promise<void>;
@@ -936,6 +941,25 @@ function TimerExperience({
     startedRef.current = true;
     setPhase("starting");
     try {
+      if (isGuest) {
+        const now = new Date().toISOString();
+        const guestSession: TimerSession = {
+          id: `guest-timer-${challenge.id}`,
+          challengeId: challenge.id,
+          habitDate: today,
+          status: "running",
+          startedAt: now,
+          remainingMs: 60000,
+          pauseUsed: false,
+          pausedAt: null,
+          updatedAt: now,
+        };
+        setSession(guestSession);
+        setRemaining(guestSession.remainingMs);
+        setPhase("running");
+        playTone(520, 0.14);
+        return;
+      }
       const result = await api<{ session: TimerSession }>("/api/timer/start", {
         method: "POST",
         body: JSON.stringify({ challengeId: challenge.id, habitDate: today }),
@@ -950,7 +974,7 @@ function TimerExperience({
       setPhase("prepare");
       startedRef.current = false;
     }
-  }, [challenge.id, onSessionChange, playTone, today]);
+  }, [challenge.id, isGuest, onSessionChange, playTone, today]);
 
   useEffect(() => {
     if (phase !== "prepare") return;
@@ -965,6 +989,14 @@ function TimerExperience({
     if (completedRef.current) return;
     completedRef.current = true;
     try {
+      if (isGuest) {
+        setPhase("celebrate");
+        playTone(660, 0.18);
+        window.setTimeout(() => playTone(880, 0.25), 160);
+        navigator.vibrate?.([45, 40, 75]);
+        window.setTimeout(onClose, 1500);
+        return;
+      }
       const result = await api<{ checkin: Checkin; challengeCompleted?: boolean }>("/api/timer/complete", {
         method: "POST",
         body: JSON.stringify({ challengeId: challenge.id }),
@@ -978,7 +1010,7 @@ function TimerExperience({
       completedRef.current = false;
       setError(err instanceof Error ? err.message : "完成记录没有保存");
     }
-  }, [challenge.id, onCompleted, playTone]);
+  }, [challenge.id, isGuest, onClose, onCompleted, playTone]);
 
   useEffect(() => {
     if (phase !== "running" || !session) return;
@@ -1030,14 +1062,17 @@ function TimerExperience({
       <div className="timer-ambient one" /><div className="timer-ambient two" />
       <header className="timer-header">
         <div className="timer-brand"><span>1′</span> 一分小事</div>
-        <button
-          className="sound-button"
-          onClick={() => {
-            const next = !muted;
-            setMuted(next);
-            localStorage.setItem("oneminute-muted", String(next));
-          }}
-        >{muted ? "静音中" : "声音开"}</button>
+        <div className="timer-header-actions">
+          <button
+            className="sound-button"
+            onClick={() => {
+              const next = !muted;
+              setMuted(next);
+              localStorage.setItem("oneminute-muted", String(next));
+            }}
+          >{muted ? "静音中" : "声音开"}</button>
+          <button className="timer-end-button" onClick={onClose}>结束</button>
+        </div>
       </header>
 
       <div className="timer-center">
@@ -1069,16 +1104,16 @@ function TimerExperience({
                 <button className="timer-primary" onClick={() => void resume()}>继续剩余时间</button>
                 <button className="timer-quiet" onClick={onClose}>暂时离开</button>
               </div>
-            ) : (
+            ) : !isGuest ? (
               <button className="pause-button" onClick={() => void pause()} disabled={Boolean(session?.pauseUsed)}>
                 <span>Ⅱ</span>{session?.pauseUsed ? "暂停已使用" : "紧急暂停"}
               </button>
-            )}
+            ) : null}
           </>
         )}
         {error && <p className="timer-error">{error}</p>}
       </div>
-      <p className="timer-footnote">倒计时自然结束后，今天的打卡才会完成</p>
+      <p className="timer-footnote">{isGuest ? "游客体验不会保存打卡记录" : "倒计时自然结束后，今天的打卡才会完成"}</p>
     </div>
   );
 }
