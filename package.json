@@ -13,6 +13,7 @@
     "local:smoke": "node scripts/local-smoke-test.mjs",
     "guest:smoke": "node scripts/guest-smoke-test.mjs",
     "package:editions": "node scripts/package-editions.mjs",
+    "server:build": "NEXT_PUBLIC_BASE_PATH=/workbench next build --webpack",
     "server:dev": "next dev",
     "server:start": "next start",
     "typecheck": "tsc --noEmit",

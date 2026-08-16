@@ -1,3 +1,3 @@
 # Download packages
 
-Run `npm run package:editions` after committing a release. The generated ZIP files are intentionally ignored by Git because the public source remains managed as text in the repository.
+Run `npm run package:editions` to package the current public working tree. Generated ZIP and manifest files use a date-based version and are intentionally ignored by Git. Real databases, environment files, keys, build caches, dependencies, and unrelated untracked assets are excluded.

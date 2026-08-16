@@ -4,13 +4,12 @@ import {
   challenges,
   checkins,
   portalLinks,
-  scheduleEntries,
-  scheduleItems,
   timerSessions,
 } from "../../../db/schema";
 import { requireApiUser } from "../../lib/current-user";
 import { getGuestDashboard } from "../../lib/guest-data";
 import { ensureDefaultPortalLinks } from "../../lib/portal-links";
+import { getScheduleDashboard } from "../../lib/schedule-collaboration";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +20,7 @@ export async function GET() {
 
   const db = getDb();
   await ensureDefaultPortalLinks(auth.user.userId);
-  const [challengeRows, checkinRows, sessionRows, scheduleItemRows, scheduleEntryRows, portalLinkRows] = await Promise.all([
+  const [challengeRows, checkinRows, sessionRows, scheduleData, portalLinkRows] = await Promise.all([
     db
       .select()
       .from(challenges)
@@ -43,17 +42,7 @@ export async function GET() {
         ),
       )
       .orderBy(desc(timerSessions.updatedAt)),
-    db
-      .select()
-      .from(scheduleItems)
-      .where(eq(scheduleItems.userId, auth.user.userId))
-      .orderBy(desc(scheduleItems.createdAt)),
-    db
-      .select()
-      .from(scheduleEntries)
-      .where(eq(scheduleEntries.userId, auth.user.userId))
-      .orderBy(desc(scheduleEntries.entryDate), desc(scheduleEntries.updatedAt))
-      .limit(2000),
+    getScheduleDashboard(auth.user),
     db
       .select()
       .from(portalLinks)
@@ -65,8 +54,10 @@ export async function GET() {
     challenges: challengeRows,
     checkins: checkinRows,
     sessions: sessionRows,
-    scheduleItems: scheduleItemRows,
-    scheduleEntries: scheduleEntryRows,
+    scheduleItems: scheduleData.items,
+    scheduleEntries: scheduleData.entries,
+    friends: scheduleData.friends,
+    notifications: scheduleData.notifications,
     portalLinks: portalLinkRows,
   });
 }

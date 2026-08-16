@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ONBOARDING_VERSION } from "../lib/onboarding";
 import { withBasePath } from "../lib/base-path";
 
@@ -42,6 +43,93 @@ type DashboardData = {
   scheduleItems: ScheduleItem[];
   scheduleEntries: ScheduleEntry[];
   portalLinks: PortalLink[];
+  friends: string[];
+  notifications: WorkbenchNotification[];
+};
+
+type WorkbenchNotification = {
+  id: string;
+  recipientUsername: string;
+  actorUsername: string | null;
+  itemId: string | null;
+  kind: "today_pending" | "shared" | "progress" | "changed" | "removed";
+  title: string;
+  body: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+type DailyPhraseData = {
+  phrase: {
+    id: string;
+    language: string;
+    country: string;
+    flag: string;
+    locale: string;
+    text: string;
+    pronunciation: string;
+    meaning: string;
+    context: string;
+    source: string;
+  };
+  state: {
+    swapCount: number;
+    learned: boolean;
+    favorite: boolean;
+    swapsRemaining: number;
+  };
+};
+
+type FavoritePhrase = DailyPhraseData["phrase"] & {
+  phraseDate: string;
+  favoriteAt: string;
+};
+
+type FavoritePhraseData = {
+  favorites: FavoritePhrase[];
+};
+
+type WorkbenchToolKey = "habit" | "schedule" | "pindou" | "favorites";
+
+type ToolUsageRecord = {
+  toolKey: WorkbenchToolKey;
+  openCount: number;
+  firstSeenAt: string;
+  lastOpenedAt: string | null;
+  isFolded: boolean;
+};
+
+type ToolUsageData = {
+  usage: ToolUsageRecord[];
+};
+
+type DeviceActivityOperation = {
+  tool: string;
+  arguments: string;
+  command: string;
+  output: string;
+};
+
+type DeviceActivityRecord = {
+  id: number;
+  instruction: string;
+  timestamp: number;
+  timeLabel: string;
+  operations: DeviceActivityOperation[];
+  result: string;
+  assistantMessageId: number | null;
+  delivery: {
+    status: "sent" | "waiting" | "before_service";
+    messageId: string;
+    deliveredAt: string;
+  };
+};
+
+type DeviceActivityData = {
+  records: DeviceActivityRecord[];
+  generatedAt: string;
+  generatedLabel: string;
+  wechatReady: boolean;
 };
 
 type PortalLink = {
@@ -61,6 +149,8 @@ type PortalLink = {
 
 type ScheduleItem = {
   id: string;
+  parentItemId: string | null;
+  parentTitle: string | null;
   kind: "task" | "project";
   title: string;
   note: string;
@@ -71,6 +161,9 @@ type ScheduleItem = {
   progress: number;
   status: "active" | "completed" | "archived";
   completedDate: string | null;
+  ownerUsername: string;
+  participantUsernames: string[];
+  isOwner: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -80,8 +173,10 @@ type ScheduleEntry = {
   itemId: string;
   entryDate: string;
   action: "completed" | "touched";
+  previousProgress: number | null;
   progress: number | null;
   note: string;
+  actorUsername: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -93,9 +188,29 @@ type UserSummary = {
   edition: "local" | "server" | "guest";
 };
 
+type WorkbenchTheme = "cabin" | "office";
+
+const WORKBENCH_THEME_STORAGE_KEY = "cabin-workbench-theme";
+const PINDOU_TOOL_PATH = "/pindou/index.html";
+const FAVORITES_TOOL_PATH = "/favorites";
+const WORKBENCH_TOOL_KEYS: WorkbenchToolKey[] = ["habit", "schedule", "pindou", "favorites"];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const CHALLENGE_COLORS = ["#e36a44", "#5b8272", "#c49a45"];
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 const PRIORITY_LABELS = { important: "重要", normal: "普通", later: "稍后" } as const;
+const SCHEDULE_EVENT_COLORS = [
+  "rgba(243, 191, 196, 0.78)",
+  "rgba(246, 210, 181, 0.78)",
+  "rgba(201, 199, 238, 0.78)",
+  "rgba(189, 229, 211, 0.78)",
+  "rgba(197, 220, 241, 0.78)",
+  "rgba(243, 227, 169, 0.78)",
+  "rgba(215, 231, 184, 0.78)",
+  "rgba(229, 199, 227, 0.78)",
+  "rgba(191, 225, 226, 0.78)",
+  "rgba(239, 201, 184, 0.78)",
+] as const;
 const PRIORITY_ORDER = { important: 0, normal: 1, later: 2 } as const;
 
 function toLocalDate(date = new Date()) {
@@ -114,6 +229,14 @@ function addDays(value: string, amount: number) {
   const date = parseDate(value);
   date.setDate(date.getDate() + amount);
   return toLocalDate(date);
+}
+
+function openPindouTool() {
+  window.location.assign(PINDOU_TOOL_PATH);
+}
+
+function openFavoritesTool() {
+  window.location.assign(FAVORITES_TOOL_PATH);
 }
 
 function formatDay(value: string) {
@@ -136,6 +259,29 @@ function formatPortalHost(value: string) {
   } catch {
     return value;
   }
+}
+
+function findToolUsage(usage: ToolUsageRecord[], toolKey: WorkbenchToolKey) {
+  return usage.find((item) => item.toolKey === toolKey);
+}
+
+function isInfrequentTool(usage: ToolUsageRecord | undefined) {
+  if (!usage) return false;
+  return getToolIdleDays(usage) > 7;
+}
+
+function getToolIdleDays(usage: ToolUsageRecord) {
+  const reference = new Date(usage.lastOpenedAt ?? usage.firstSeenAt);
+  const current = new Date();
+  const currentDay = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+  const referenceDay = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+  return Math.max(0, Math.round((currentDay - referenceDay) / DAY_MS));
+}
+
+function formatToolInactivity(usage: ToolUsageRecord) {
+  const days = getToolIdleDays(usage);
+  if (days === 0) return usage.lastOpenedAt ? "今天使用" : "今天尚未使用";
+  return `${days} 天未使用`;
 }
 
 function getChallengeStreak(challengeId: string, checkins: Checkin[], today: string) {
@@ -167,6 +313,10 @@ function isSessionUsable(session: TimerSession, today: string) {
   );
 }
 
+function isBobUser(user: UserSummary) {
+  return user.email.trim().toLowerCase() === "bob";
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(withBasePath(path), {
     ...init,
@@ -179,9 +329,53 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function HabitApp({ user }: { user: UserSummary }) {
   const [activeTool, setActiveTool] = useState<"world" | "habit" | "schedule">("world");
+  const [theme, setTheme] = useState<WorkbenchTheme>("cabin");
   const [guideOpen, setGuideOpen] = useState(user.onboardingVersion < ONBOARDING_VERSION);
   const [downloadsOpen, setDownloadsOpen] = useState(false);
   const [seenGuideVersion, setSeenGuideVersion] = useState(user.onboardingVersion);
+  const toolUseDayRef = useRef<Partial<Record<WorkbenchToolKey, string>>>({});
+
+  const markToolUsed = useCallback((toolKey: WorkbenchToolKey) => {
+    if (user.edition === "guest") return;
+    const usageDay = toLocalDate();
+    if (toolUseDayRef.current[toolKey] === usageDay) return;
+    toolUseDayRef.current[toolKey] = usageDay;
+    void api("/api/tool-usage", {
+      method: "POST",
+      body: JSON.stringify({ toolKey, action: "use" }),
+      keepalive: true,
+    }).catch(() => {
+      if (toolUseDayRef.current[toolKey] === usageDay) delete toolUseDayRef.current[toolKey];
+    });
+  }, [user.edition]);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem(WORKBENCH_THEME_STORAGE_KEY);
+    if (savedTheme !== "cabin" && savedTheme !== "office") return;
+    const task = window.setTimeout(() => setTheme(savedTheme), 0);
+    return () => window.clearTimeout(task);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.workbenchTheme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    const openSchedule = () => {
+      markToolUsed("schedule");
+      setActiveTool("schedule");
+    };
+    window.addEventListener("cabin:open-schedule", openSchedule);
+    return () => window.removeEventListener("cabin:open-schedule", openSchedule);
+  }, [markToolUsed]);
+
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === "cabin" ? "office" : "cabin";
+      window.localStorage.setItem(WORKBENCH_THEME_STORAGE_KEY, next);
+      return next;
+    });
+  }
 
   function rememberGuide() {
     setGuideOpen(false);
@@ -197,18 +391,24 @@ export function HabitApp({ user }: { user: UserSummary }) {
 
   function startFromGuide(tool: "habit" | "schedule") {
     rememberGuide();
+    markToolUsed(tool);
     setActiveTool(tool);
   }
 
   const currentView = activeTool === "habit"
-    ? <HabitWorkspace user={user} onBack={() => setActiveTool("world")} />
+    ? <HabitWorkspace user={user} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("habit")} />
     : activeTool === "schedule"
-      ? <ScheduleWorkspace user={user} onBack={() => setActiveTool("world")} />
+      ? <ScheduleWorkspace user={user} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("schedule")} />
       : (
         <WorldWorkbench
           user={user}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onOpenGuide={() => setGuideOpen(true)}
+          onOpenDownloads={() => setDownloadsOpen(true)}
           openHabit={() => setActiveTool("habit")}
           openSchedule={() => setActiveTool("schedule")}
+          onUseTool={markToolUsed}
         />
       );
 
@@ -221,28 +421,16 @@ export function HabitApp({ user }: { user: UserSummary }) {
           <div><strong>{user.edition === "guest" ? "游客体验" : "个人本地版"}</strong><small>{user.edition === "guest" ? "只读模式 · 不保存数据" : "数据保存在此电脑"}</small></div>
         </div>
       )}
-      <div className="global-utility-actions">
-        <button className="guide-replay-button" onClick={() => setGuideOpen(true)} aria-label="打开新手指引">
-          <span>?</span>
-          <strong>新手指引</strong>
-          <small>随时回顾</small>
-        </button>
-        <button className="global-download-button" onClick={() => setDownloadsOpen(true)} aria-label="下载木屋工作台代码">
-          <span>↓</span>
-          <strong>借鉴主包的工作台</strong>
-          <small>下载两个版本</small>
-        </button>
-      </div>
       {downloadsOpen && (
         <div className="download-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDownloadsOpen(false)}>
           <section className="download-modal" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
             <button className="download-modal-close" onClick={() => setDownloadsOpen(false)} aria-label="关闭">×</button>
             <p>PACK THE CABIN · SOURCE CODE</p>
             <h2 id="download-modal-title">把这座工作台带回去</h2>
-            <span>选择适合你的版本。压缩包只包含公开代码，不包含用户记录、账号、密码或服务器密钥。</span>
+            <span>2026 年 8 月 8 日最新版，已包含双风格界面与拼豆识图。压缩包只包含公开代码，不包含用户记录、账号、密码或服务器密钥。</span>
             <div className="global-download-options">
-              <a href={withBasePath("/downloads/cabin-workbench-local.zip")} download><i>⌂</i><div><small>PERSONAL · LOCAL</small><strong>个人本地版</strong><p>无需登录，一条命令启动；数据保存在自己的电脑。</p></div><b>下载 ↓</b></a>
-              <a href={withBasePath("/downloads/cabin-workbench-server.zip")} download><i>⇄</i><div><small>MULTI-USER · SERVER</small><strong>多用户服务器版</strong><p>邮箱登录与账户隔离，适合部署后分享给其他人。</p></div><b>下载 ↓</b></a>
+              <a href={withBasePath("/downloads/cabin-workbench-local-20260808.zip")} download><i>⌂</i><div><small>PERSONAL · LOCAL · 2026.08.08</small><strong>个人本地版</strong><p>无需登录，一条命令启动；数据保存在自己的电脑。</p></div><b>下载最新版 ↓</b></a>
+              <a href={withBasePath("/downloads/cabin-workbench-server-20260808.zip")} download><i>⇄</i><div><small>MULTI-USER · SERVER · 2026.08.08</small><strong>多用户服务器版</strong><p>用户名登录与账户隔离，适合部署后分享给其他人。</p></div><b>下载最新版 ↓</b></a>
             </div>
           </section>
         </div>
@@ -262,10 +450,10 @@ const GUIDE_STEPS = [
   {
     key: "map",
     index: "01",
-    eyebrow: "WELCOME · 木屋地图",
-    title: "先认清这座木屋，再开始今天。",
-    copy: "这里不是一张塞满功能的表格，而是你的统一入口。工作间负责行动，生活市集和娱乐角负责快速抵达常用网站。",
-    points: ["工作间：长期习惯与短线日程", "生活市集：常用购物入口", "娱乐角：常用内容与视频网站"],
+    eyebrow: "WELCOME · 工作台地图",
+    title: "先看今天，再决定去哪里。",
+    copy: "登录后会直接来到工作台。这里集中今天的日程、项目和习惯；生活与娱乐只保留为两个独立入口，辅助功能则收在头像菜单里。",
+    points: ["工作台：长期习惯与短线日程", "生活：常用购物入口", "娱乐：常用内容与视频网站"],
   },
   {
     key: "habit",
@@ -288,7 +476,7 @@ const GUIDE_STEPS = [
     index: "04",
     eyebrow: "FIRST QUEST · 第一个任务",
     title: "现在，选择你的第一条路线。",
-    copy: "想培养一个长期习惯，就从“一分小事”开始；想把今天和项目安排清楚，就进入“个人日程”。之后可以随时点击右侧的「新手指引」回来查看。",
+    copy: "想培养一个长期习惯，就从“一分小事”开始；想把今天和项目安排清楚，就进入“个人日程”。之后可以随时从头像菜单打开「新手指引」。",
     points: ["长线：一天一分钟，连续坚持 21 天", "短线：今天做什么，项目推进到哪里"],
   },
 ] as const;
@@ -377,7 +565,19 @@ function OnboardingGuide({
   );
 }
 
-function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => void }) {
+function HabitWorkspace({
+  user,
+  theme,
+  onToggleTheme,
+  onBack,
+  onUse,
+}: {
+  user: UserSummary;
+  theme: WorkbenchTheme;
+  onToggleTheme: () => void;
+  onBack: () => void;
+  onUse: () => void;
+}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loadingError, setLoadingError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -390,6 +590,7 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
     try {
       const result = await api<DashboardData>("/api/dashboard");
       setData(result);
+      window.dispatchEvent(new CustomEvent("cabin:notifications-refresh"));
       setLoadingError("");
     } catch (error) {
       setLoadingError(error instanceof Error ? error.message : "暂时无法读取记录");
@@ -441,18 +642,22 @@ function HabitWorkspace({ user, onBack }: { user: UserSummary; onBack: () => voi
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" onClickCapture={onUse}>
       <header className="topbar">
         <button className="brand brand-button" onClick={onBack} aria-label="返回木屋工作台">
           <span className="brand-dot">1′</span>
           <span>一分小事</span>
           <small>返回工作台</small>
         </button>
-        <div className="account-chip" title={user.email}>
-          <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
-          <div>
-            <strong>{user.displayName}</strong>
-            {user.edition === "local" ? <small>个人本地版</small> : <a href={withBasePath("/logout")}>{user.edition === "guest" ? "退出体验" : "退出"}</a>}
+        <div className="tool-header-actions">
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+          <NotificationCenter user={user} />
+          <div className="account-chip" title={user.email}>
+            <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+            <div>
+              <strong>{user.displayName}</strong>
+              {user.edition === "local" ? <small>个人本地版</small> : <a href={withBasePath("/logout")}>{user.edition === "guest" ? "退出体验" : "退出"}</a>}
+            </div>
           </div>
         </div>
       </header>
@@ -1177,35 +1382,156 @@ function NoteModal({
 
 function WorldWorkbench({
   user,
+  theme,
+  onToggleTheme,
+  onOpenGuide,
+  onOpenDownloads,
   openHabit,
   openSchedule,
+  onUseTool,
 }: {
   user: UserSummary;
+  theme: WorkbenchTheme;
+  onToggleTheme: () => void;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
   openHabit: () => void;
   openSchedule: () => void;
+  onUseTool: (toolKey: WorkbenchToolKey) => void;
 }) {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [toolUsage, setToolUsage] = useState<ToolUsageRecord[]>([]);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const [room, setRoom] = useState<"foyer" | "work" | "life" | "entertainment">("foyer");
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [room, setRoom] = useState<CabinRoom>("work");
   const [view, setView] = useState({ x: 0, y: 0 });
   const today = toLocalDate();
 
   const loadDashboard = useCallback(async () => {
     const result = await api<DashboardData>("/api/dashboard");
     setData(result);
+    window.dispatchEvent(new CustomEvent("cabin:notifications-refresh"));
+  }, []);
+
+  const loadToolUsage = useCallback(async () => {
+    const result = await api<ToolUsageData>("/api/tool-usage");
+    setToolUsage(result.usage);
   }, []);
 
   useEffect(() => {
-    const task = window.setTimeout(() => void loadDashboard().catch(() => undefined), 0);
+    const task = window.setTimeout(() => {
+      void Promise.all([
+        loadDashboard().catch(() => undefined),
+        loadToolUsage().catch(() => undefined),
+      ]);
+    }, 0);
     return () => window.clearTimeout(task);
-  }, [loadDashboard]);
+  }, [loadDashboard, loadToolUsage]);
+
+  useEffect(() => {
+    const openUsage = () => setUsageOpen(true);
+    window.addEventListener("cabin:open-tool-usage", openUsage);
+    return () => window.removeEventListener("cabin:open-tool-usage", openUsage);
+  }, []);
 
   const activeHabits = data?.challenges.filter((item) => item.status === "active") ?? [];
   const activeSchedule = data?.scheduleItems.filter((item) => item.status === "active") ?? [];
   const todayEntries = data?.scheduleEntries.filter((item) => item.entryDate === today) ?? [];
   const touchedProjects = new Set(todayEntries.filter((entry) => entry.action === "touched").map((entry) => entry.itemId));
   const todayDone = todayEntries.filter((entry) => entry.action === "completed").length;
-  const weekDates = Array.from({ length: 7 }, (_, index) => addDays(today, index - 3));
+  const weekDates = Array.from({ length: 7 }, (_, index) => addDays(today, index));
+  const activeToolKeys = WORKBENCH_TOOL_KEYS.filter((toolKey) => !findToolUsage(toolUsage, toolKey)?.isFolded);
+  const foldedToolKeys = WORKBENCH_TOOL_KEYS.filter((toolKey) => findToolUsage(toolUsage, toolKey)?.isFolded);
+
+  function recordToolUse(toolKey: WorkbenchToolKey) {
+    const now = new Date().toISOString();
+    setToolUsage((current) => {
+      const existing = findToolUsage(current, toolKey);
+      const next: ToolUsageRecord = {
+        toolKey,
+        openCount: existing?.openCount ?? 0,
+        firstSeenAt: existing?.firstSeenAt ?? now,
+        lastOpenedAt: now,
+        isFolded: existing?.isFolded ?? false,
+      };
+      return existing
+        ? current.map((item) => item.toolKey === toolKey ? next : item)
+        : [...current, next];
+    });
+    onUseTool(toolKey);
+  }
+
+  function launchTool(toolKey: WorkbenchToolKey, action: () => void) {
+    recordToolUse(toolKey);
+    action();
+  }
+
+  const launchHabit = () => launchTool("habit", openHabit);
+  const launchSchedule = () => launchTool("schedule", openSchedule);
+  const launchPindou = () => launchTool("pindou", openPindouTool);
+  const launchFavorites = () => launchTool("favorites", openFavoritesTool);
+
+  function setToolFolded(toolKey: WorkbenchToolKey, isFolded: boolean) {
+    const now = new Date().toISOString();
+    setToolUsage((current) => {
+      const existing = findToolUsage(current, toolKey);
+      const next: ToolUsageRecord = {
+        toolKey,
+        openCount: existing?.openCount ?? 0,
+        firstSeenAt: existing?.firstSeenAt ?? now,
+        lastOpenedAt: existing?.lastOpenedAt ?? null,
+        isFolded,
+      };
+      return existing
+        ? current.map((item) => item.toolKey === toolKey ? next : item)
+        : [...current, next];
+    });
+    if (user.edition === "guest") return;
+    void api<{ usage: ToolUsageRecord }>("/api/tool-usage", {
+      method: "POST",
+      body: JSON.stringify({ toolKey, action: isFolded ? "fold" : "restore" }),
+    }).then(({ usage }) => {
+      setToolUsage((current) => current.map((item) => item.toolKey === toolKey ? usage : item));
+    }).catch(() => void loadToolUsage().catch(() => undefined));
+  }
+
+  function renderCabinToolTile(toolKey: WorkbenchToolKey) {
+    if (toolKey === "habit") {
+      return (
+        <button key={toolKey} className="tool-tile habit-tile" onClick={launchHabit}>
+          <span className="tool-pixel-icon">1′</span>
+          <div><small>LONG TERM</small><h3>一分小事</h3><p>用一分钟完成，用二十一天坚持。</p><em>{activeHabits.length} 个习惯进行中 →</em></div>
+        </button>
+      );
+    }
+    if (toolKey === "schedule") {
+      return (
+        <button key={toolKey} className="tool-tile schedule-tile" onClick={launchSchedule}>
+          <span className="tool-pixel-icon">▦</span>
+          <div><small>SHORT TERM</small><h3>个人日程</h3><p>让事项每天出现，让项目持续向前。</p><em>{activeSchedule.length} 件正在推进 →</em></div>
+        </button>
+      );
+    }
+    if (toolKey === "favorites") {
+      return (
+        <button key={toolKey} className="tool-tile favorites-tile" onClick={launchFavorites}>
+          <span className="tool-pixel-icon">🗂</span>
+          <div><small>INSPIRATION LIBRARY</small><h3>灵感库</h3><p>收藏视频与笔记，按内容、作者和标签快速找回灵感。</p><em>打开个人收藏库 →</em></div>
+        </button>
+      );
+    }
+    return (
+      <button key={toolKey} className="tool-tile pindou-tile" onClick={launchPindou}>
+        <span className="tool-pixel-icon">豆</span>
+        <div><small>CREATIVE TOOL</small><h3>拼豆识图</h3><p>上传拼豆图纸，手动框选网格并生成色块清单。</p><em>打开纯浏览器版 →</em></div>
+      </button>
+    );
+  }
+
+  function openRoom(nextRoom: CabinRoom) {
+    if (nextRoom === "activity" && !isBobUser(user)) return;
+    setRoom(nextRoom === "foyer" ? "work" : nextRoom);
+  }
 
   function moveView(event: React.PointerEvent<HTMLElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1215,6 +1541,24 @@ function WorldWorkbench({
   }
 
   if (room === "foyer") {
+    if (theme === "office") {
+      return (
+        <OfficeFoyer
+          user={user}
+          today={today}
+          openRoom={openRoom}
+          openHabit={launchHabit}
+          openSchedule={launchSchedule}
+          openPindou={launchPindou}
+          openFavorites={launchFavorites}
+          onToggleTheme={onToggleTheme}
+          onOpenGuide={onOpenGuide}
+          onOpenDownloads={onOpenDownloads}
+          workSummary={{ habits: activeHabits.length, schedule: activeSchedule.length, done: todayDone }}
+        />
+      );
+    }
+
     return (
       <CabinFoyer
         user={user}
@@ -1222,22 +1566,78 @@ function WorldWorkbench({
         view={view}
         moveView={moveView}
         resetView={() => setView({ x: 0, y: 0 })}
-        openRoom={setRoom}
+        openRoom={openRoom}
+        onToggleTheme={onToggleTheme}
+        onOpenGuide={onOpenGuide}
+        onOpenDownloads={onOpenDownloads}
         workSummary={{ habits: activeHabits.length, schedule: activeSchedule.length, done: todayDone }}
       />
     );
   }
 
+  if (room === "activity") {
+    return (
+      <>
+        <DeviceActivityRoom
+          user={user}
+          theme={theme}
+          openRoom={openRoom}
+          onToggleTheme={onToggleTheme}
+          onOpenGuide={onOpenGuide}
+          onOpenDownloads={onOpenDownloads}
+        />
+        {usageOpen && <ToolUsageModal user={user} usage={toolUsage} onClose={() => setUsageOpen(false)} onSetFolded={setToolFolded} />}
+      </>
+    );
+  }
+
   if (room === "life" || room === "entertainment") {
     return (
-      <PortalRoom
+      <>
+        <PortalRoom
+          user={user}
+          theme={theme}
+          onToggleTheme={onToggleTheme}
+          category={room}
+          links={(data?.portalLinks ?? []).filter((link) => link.category === room)}
+          onBack={() => setRoom("work")}
+          switchRoom={openRoom}
+          reload={loadDashboard}
+          onOpenGuide={onOpenGuide}
+          onOpenDownloads={onOpenDownloads}
+        />
+        {usageOpen && <ToolUsageModal user={user} usage={toolUsage} onClose={() => setUsageOpen(false)} onSetFolded={setToolFolded} />}
+      </>
+    );
+  }
+
+  if (theme === "office") {
+    return (
+      <>
+      <OfficeWorkRoom
         user={user}
-        category={room}
-        links={(data?.portalLinks ?? []).filter((link) => link.category === room)}
-        onBack={() => setRoom("foyer")}
-        switchRoom={setRoom}
-        reload={loadDashboard}
+        today={today}
+        openRoom={openRoom}
+        openHabit={launchHabit}
+        openSchedule={launchSchedule}
+        openPindou={launchPindou}
+        openFavorites={launchFavorites}
+        toolUsage={toolUsage}
+        onToggleTheme={onToggleTheme}
+        onOpenGuide={onOpenGuide}
+        onOpenDownloads={onOpenDownloads}
+        scheduleItems={data?.scheduleItems ?? []}
+        scheduleEntries={data?.scheduleEntries ?? []}
+        summary={{
+          habits: activeHabits.length,
+          tasks: activeSchedule.filter((item) => item.kind === "task").length,
+          projects: activeSchedule.filter((item) => item.kind === "project" && !item.parentItemId).length,
+          touchedProjects: touchedProjects.size,
+          done: todayDone,
+        }}
       />
+      {usageOpen && <ToolUsageModal user={user} usage={toolUsage} onClose={() => setUsageOpen(false)} onSetFolded={setToolFolded} />}
+      </>
     );
   }
 
@@ -1276,12 +1676,16 @@ function WorldWorkbench({
       </div>
 
       <header className="world-hud">
-        <button className="world-brand room-brand-button" onClick={() => setRoom("foyer")}>
+        <button className="world-brand room-brand-button" onClick={() => setRoom("work")}>
           <span className="world-brand-cube"><i /><i /><i /></span>
-          <div><strong>工作间</strong><small>返回木屋玄关</small></div>
+          <div><strong>木屋工作台</strong><small>WORKSPACE</small></div>
         </button>
         <div className="world-date"><span>{formatLongDay(today)}</span><i />炉火正暖，适合专注一会儿</div>
-        <RoomSwitcher current="work" openRoom={setRoom} />
+        <div className="world-header-actions">
+          <RoomSwitcher current="work" openRoom={openRoom} />
+          <NotificationCenter user={user} />
+          <WorkbenchAccountMenu user={user} theme="cabin" openRoom={openRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+        </div>
       </header>
 
       <section className="world-stage" aria-label="像素木屋工作台场景">
@@ -1306,10 +1710,10 @@ function WorldWorkbench({
           <span className="pixel-workbench" aria-hidden="true">
             <i className="bench-top" /><i className="bench-front" /><i className="bench-grid" /><i className="bench-leg left" /><i className="bench-leg right" />
           </span>
-          <span className="world-object-label"><small>TOOL CHEST</small><strong>工具箱</strong><em>{2} 个工具可以使用</em></span>
+          <span className="world-object-label"><small>TOOL CHEST</small><strong>工具箱</strong><em>创作工具 · {foldedToolKeys.length} 个收起</em></span>
         </button>
 
-        <button className="world-object calendar-object" onClick={openSchedule}>
+        {activeToolKeys.includes("schedule") && <button className="world-object calendar-object" onClick={launchSchedule}>
           <span className="object-pulse" />
           <span className="pixel-calendar" aria-hidden="true">
             <span className="calendar-pixel-head"><i /><i /></span>
@@ -1318,9 +1722,9 @@ function WorldWorkbench({
             <span className="calendar-pixel-marks"><i /><i /><i /></span>
           </span>
           <span className="world-object-label align-right"><small>WALL CALENDAR</small><strong>个人日程</strong><em>{activeSchedule.length} 件正在路上</em></span>
-        </button>
+        </button>}
 
-        <button className="habit-crystal" onClick={openHabit} aria-label="进入一分小事">
+        {activeToolKeys.includes("habit") && <button className="habit-crystal" onClick={launchHabit} aria-label="进入一分小事">
           <span className="pixel-hourglass" aria-hidden="true">
             <i className="hourglass-top" />
             <i className="hourglass-glass" />
@@ -1329,7 +1733,7 @@ function WorldWorkbench({
             <strong>1′</strong>
           </span>
           <span className="world-object-label"><small>ONE MINUTE</small><strong>一分小事</strong><em>{activeHabits.length} 个习惯坚持中</em></span>
-        </button>
+        </button>}
 
         <aside className="world-quest-card">
           <div className="quest-head"><span>今日便笺</span><small>{todayDone} 项已完成</small></div>
@@ -1338,52 +1742,448 @@ function WorldWorkbench({
           <div className="quest-row"><i className="quest-project" /><span>今日推进项目</span><strong>{touchedProjects.size}</strong></div>
         </aside>
 
-        <aside className="world-mini-calendar">
+        {activeSchedule.length > 0 && <aside className="world-mini-calendar">
           <p>本周日历</p>
           <div>
             {weekDates.map((date) => (
-              <button key={date} className={date === today ? "current" : ""} onClick={openSchedule}>
+              <button key={date} className={date === today ? "current" : ""} onClick={launchSchedule}>
                 <small>{["日", "一", "二", "三", "四", "五", "六"][parseDate(date).getDay()]}</small>
                 <strong>{parseDate(date).getDate()}</strong>
-                <i className={data?.scheduleEntries.some((entry) => entry.entryDate === date) ? "has-entry" : ""} />
+                <i className={activeSchedule.some((item) => item.repeatDaily ? date >= item.startDate : item.kind === "project" ? date === today || date === item.startDate || date === item.dueDate : date === item.startDate || (date === today && item.startDate < today)) ? "has-entry" : ""} />
               </button>
             ))}
           </div>
-        </aside>
+        </aside>}
+
+        <div className="world-daily-phrase"><DailyPhraseCard user={user} compact /></div>
       </section>
 
       <nav className="world-dock" aria-label="快速进入工具">
-        <button onClick={openHabit}><span className="dock-habit">1′</span><div><small>长期习惯</small><strong>一分小事</strong></div></button>
-        <i />
-        <button onClick={openSchedule}><span className="dock-schedule">▦</span><div><small>短线执行</small><strong>个人日程</strong></div></button>
+        {activeToolKeys.includes("habit") && <button onClick={launchHabit}><span className="dock-habit">1′</span><div><small>长期习惯</small><strong>一分小事</strong></div></button>}
+        {activeToolKeys.includes("schedule") && <button onClick={launchSchedule}><span className="dock-schedule">▦</span><div><small>短线执行</small><strong>个人日程</strong></div></button>}
       </nav>
 
       {toolsOpen && (
         <div className="world-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setToolsOpen(false)}>
           <section className="tool-library" role="dialog" aria-modal="true" aria-labelledby="tool-library-title">
             <button className="world-modal-close" onClick={() => setToolsOpen(false)} aria-label="关闭">×</button>
-            <p>TOOL CHEST · CABIN 01</p>
-            <h2 id="tool-library-title">打开木屋工具箱</h2>
-            <span className="tool-library-copy">长期的事慢慢生长，眼前的事清楚推进。</span>
+            <p>TOOLBOX · CABIN 01</p>
+            <h2 id="tool-library-title">工具箱</h2>
+            <span className="tool-library-copy">日程和习惯留在工作台，辅助创作工具收在这里。</span>
             <div className="tool-library-grid">
-              <button className="tool-tile habit-tile" onClick={openHabit}>
-                <span className="tool-pixel-icon">1′</span>
-                <div><small>LONG TERM</small><h3>一分小事</h3><p>用一分钟完成，用二十一天坚持。</p><em>{activeHabits.length} 个习惯进行中 →</em></div>
-              </button>
-              <button className="tool-tile schedule-tile" onClick={openSchedule}>
-                <span className="tool-pixel-icon">▦</span>
-                <div><small>SHORT TERM</small><h3>个人日程</h3><p>让事项每天出现，让项目持续向前。</p><em>{activeSchedule.length} 件正在推进 →</em></div>
-              </button>
+              {activeToolKeys.filter((toolKey) => toolKey === "pindou" || toolKey === "favorites").map(renderCabinToolTile)}
             </div>
+            {foldedToolKeys.length > 0 && (
+              <details className="infrequent-tools-card cabin-infrequent-tools">
+                <summary><span><strong>不常用工具</strong><small>这些工具由你手动收起</small></span><b>{foldedToolKeys.length} 个</b></summary>
+                <div className="tool-library-grid">{foldedToolKeys.map(renderCabinToolTile)}</div>
+              </details>
+            )}
           </section>
         </div>
       )}
+
+      {usageOpen && <ToolUsageModal user={user} usage={toolUsage} onClose={() => setUsageOpen(false)} onSetFolded={setToolFolded} />}
 
     </main>
   );
 }
 
-type CabinRoom = "foyer" | "work" | "life" | "entertainment";
+const TOOL_USAGE_PRESENTATION: Record<WorkbenchToolKey, { name: string; category: string; mark: string }> = {
+  habit: { name: "一分小事", category: "长期习惯", mark: "1′" },
+  schedule: { name: "个人日程", category: "任务与项目", mark: "▦" },
+  pindou: { name: "拼豆识图", category: "创作工具", mark: "豆" },
+  favorites: { name: "灵感库", category: "灵感收藏", mark: "🗂" },
+};
+
+function ToolUsageModal({
+  user,
+  usage,
+  onClose,
+  onSetFolded,
+}: {
+  user: UserSummary;
+  usage: ToolUsageRecord[];
+  onClose: () => void;
+  onSetFolded: (toolKey: WorkbenchToolKey, isFolded: boolean) => void;
+}) {
+  const now = new Date().toISOString();
+  const rows = WORKBENCH_TOOL_KEYS.map((toolKey) => findToolUsage(usage, toolKey) ?? {
+    toolKey,
+    openCount: 0,
+    firstSeenAt: now,
+    lastOpenedAt: null,
+    isFolded: false,
+  });
+  const usedTodayCount = rows.filter((item) => item.lastOpenedAt && getToolIdleDays(item) === 0).length;
+  const staleCount = rows.filter((item) => isInfrequentTool(item)).length;
+
+  return (
+    <div className="tool-usage-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="tool-usage-modal" role="dialog" aria-modal="true" aria-labelledby="tool-usage-title">
+        <button className="tool-usage-close" type="button" onClick={onClose} aria-label="关闭使用统计">×</button>
+        <header className="tool-usage-head">
+          <div><p>TOOL MEMORY · 使用状态</p><h2 id="tool-usage-title">哪些工具最近真的用到了？</h2><span>进入工具或操作其中任意功能，都会更新今天的使用状态。</span></div>
+          <div className="tool-usage-summary"><article><small>今天使用</small><strong>{usedTodayCount}</strong><span>个</span></article><article><small>超过 7 天</small><strong>{staleCount}</strong><span>个</span></article></div>
+        </header>
+
+        <div className="tool-usage-chart" aria-label="工具未使用天数图表">
+          {rows.map((item) => {
+            const tool = TOOL_USAGE_PRESENTATION[item.toolKey];
+            const recommended = isInfrequentTool(item) && !item.isFolded;
+            const idleDays = getToolIdleDays(item);
+            const width = idleDays === 0 ? 0 : Math.max(8, Math.min(100, Math.round(idleDays / 7 * 100)));
+            return (
+              <article className={`tool-usage-row ${item.isFolded ? "is-folded" : ""} ${idleDays > 7 ? "is-stale" : ""}`} key={item.toolKey}>
+                <div className={`tool-usage-mark ${item.toolKey}`}>{tool.mark}</div>
+                <div className="tool-usage-data">
+                  <div className="tool-usage-name"><span><small>{tool.category}</small><strong>{tool.name}</strong></span><b>{formatToolInactivity(item)}</b></div>
+                  <div className="tool-usage-bar"><i style={{ "--usage-width": `${width}%` } as React.CSSProperties} /></div>
+                  <div className="tool-usage-meta"><span>按自然日计算</span>{item.isFolded ? <em>已由你收进不常用</em> : recommended ? <em className="is-recommendation">超过 7 天未使用，建议收起</em> : <em>仍在常用区</em>}</div>
+                </div>
+                <button type="button" disabled={user.edition === "guest"} onClick={() => onSetFolded(item.toolKey, !item.isFolded)}>{item.isFolded ? "恢复常用" : "收进不常用"}</button>
+              </article>
+            );
+          })}
+        </div>
+
+        <footer><span>每天首次使用会刷新状态，不累计点击次数</span><button type="button" onClick={onClose}>完成</button></footer>
+      </section>
+    </div>
+  );
+}
+
+type CabinRoom = "foyer" | "work" | "life" | "entertainment" | "activity";
+
+function ThemeToggle({ theme, onToggle }: { theme: WorkbenchTheme; onToggle: () => void }) {
+  const office = theme === "office";
+  const nextTheme = office ? "休闲木屋风" : "飞书钉钉办公风";
+
+  return (
+    <button
+      className={`theme-toggle ${office ? "is-office" : "is-cabin"}`}
+      type="button"
+      onClick={onToggle}
+      aria-label={`切换到${nextTheme}`}
+      aria-pressed={office}
+      title={`切换到${nextTheme}`}
+    >
+      <span className="theme-toggle-icon" aria-hidden="true"><i /><i /><i /></span>
+      <span><small>界面风格</small><strong>{office ? "切到木屋风" : "切到办公风"}</strong></span>
+    </button>
+  );
+}
+
+function DailyPhraseCard({ user, compact = false }: { user: UserSummary; compact?: boolean }) {
+  const [data, setData] = useState<DailyPhraseData | null>(null);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+
+  useEffect(() => {
+    const task = window.setTimeout(() => {
+      void api<DailyPhraseData>("/api/daily-phrase").then(setData).catch(() => setMessage("今天的短语暂时走丢了"));
+    }, 0);
+    return () => window.clearTimeout(task);
+  }, []);
+
+  async function update(action: "swap" | "learn" | "favorite") {
+    if (user.edition === "guest") {
+      setMessage("登录后可以换一句、收藏和打卡");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      setData(await api<DailyPhraseData>("/api/daily-phrase", {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      }));
+      if (action === "swap") setMessage("换到一句新的啦");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "操作没有成功");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function speak() {
+    if (!data || !("speechSynthesis" in window)) {
+      setMessage("当前浏览器暂不支持发音");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(data.phrase.text);
+    utterance.lang = data.phrase.locale;
+    utterance.rate = 0.82;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function openFavorites() {
+    if (user.edition === "guest") {
+      setMessage("登录后可以查看自己的收藏");
+      return;
+    }
+    setFavoritesOpen(true);
+  }
+
+  if (!data) {
+    return <section className={`daily-phrase-card ${compact ? "compact" : ""}`} aria-label="今日上头一句"><div className="daily-phrase-loading">{message || "正在从世界另一端捎来一句话…"}</div></section>;
+  }
+
+  const { phrase, state } = data;
+  return (
+    <>
+    <section className={`daily-phrase-card ${compact ? "compact" : ""} ${state.learned ? "is-learned" : ""}`} aria-label="今日上头一句">
+      <div className="daily-phrase-stamp"><span>{phrase.flag}</span><small>{phrase.country}</small></div>
+      <div className="daily-phrase-copy">
+        <div className="daily-phrase-kicker"><span>今日上头一句</span><i />{phrase.language}<em>DAILY PHRASE</em><button type="button" onClick={openFavorites}><b>★</b> 我的收藏</button></div>
+        <h2 lang={phrase.locale}>{phrase.text}</h2>
+        <p><b>读音</b>{phrase.pronunciation}</p>
+        <strong>{phrase.meaning}</strong>
+        {!compact && <small>{phrase.context} · 来源：{phrase.source}</small>}
+      </div>
+      <div className="daily-phrase-actions">
+        <button type="button" onClick={speak}><span>▶</span>听发音</button>
+        <button type="button" className={state.learned ? "active" : ""} onClick={() => void update("learn")} disabled={busy}><span>{state.learned ? "✓" : "○"}</span>{state.learned ? "今天会了" : "跟读一次"}</button>
+        <button type="button" className={state.favorite ? "active" : ""} onClick={() => void update("favorite")} disabled={busy} aria-label={state.favorite ? "取消收藏" : "收藏这句话"}><span>{state.favorite ? "★" : "☆"}</span>{state.favorite ? "已收藏" : "收藏"}</button>
+        <button type="button" onClick={() => void update("swap")} disabled={busy || state.swapsRemaining === 0}><span>↻</span>{state.swapsRemaining > 0 ? `换一句 · ${state.swapsRemaining}` : "明天再换"}</button>
+      </div>
+      {message && <div className="daily-phrase-message" role="status">{message}</div>}
+    </section>
+    {favoritesOpen && typeof document !== "undefined" && createPortal(
+      <FavoritePhrasesModal
+        onClose={() => setFavoritesOpen(false)}
+        onRemoved={(phraseDate) => {
+          if (phraseDate !== toLocalDate()) return;
+          setData((current) => current ? { ...current, state: { ...current.state, favorite: false } } : current);
+        }}
+      />,
+      document.body,
+    )}
+    </>
+  );
+}
+
+function FavoritePhrasesModal({ onClose, onRemoved }: { onClose: () => void; onRemoved: (phraseDate: string) => void }) {
+  const [items, setItems] = useState<FavoritePhrase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  const loadFavorites = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await api<FavoritePhraseData>("/api/daily-phrase/favorites");
+      setItems(result.favorites);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "暂时无法读取收藏");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const task = window.setTimeout(() => void loadFavorites(), 0);
+    return () => window.clearTimeout(task);
+  }, [loadFavorites]);
+
+  function speakPhrase(phrase: FavoritePhrase) {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(phrase.text);
+    utterance.lang = phrase.locale;
+    utterance.rate = 0.82;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function removeFavorite(phrase: FavoritePhrase) {
+    setRemoving(phrase.phraseDate);
+    setError("");
+    try {
+      const result = await api<FavoritePhraseData>("/api/daily-phrase/favorites", {
+        method: "DELETE",
+        body: JSON.stringify({ phraseDate: phrase.phraseDate }),
+      });
+      setItems(result.favorites);
+      onRemoved(phrase.phraseDate);
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "暂时无法取消收藏");
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  return (
+    <div className="phrase-favorites-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="phrase-favorites-modal" role="dialog" aria-modal="true" aria-labelledby="phrase-favorites-title">
+        <button className="phrase-favorites-close" type="button" onClick={onClose} aria-label="关闭我的收藏">×</button>
+        <header><p>MY PHRASE BOOK</p><h2 id="phrase-favorites-title">我的收藏</h2><span>{loading ? "正在整理…" : `共 ${items.length} 句，按收藏时间排列`}</span></header>
+
+        <div className="phrase-favorites-list">
+          {loading && <div className="phrase-favorites-empty">正在取回收藏的句子…</div>}
+          {!loading && error && items.length === 0 && <div className="phrase-favorites-empty is-error"><strong>暂时没有打开收藏夹</strong><span>{error}</span><button type="button" onClick={() => void loadFavorites()}>重新读取</button></div>}
+          {!loading && !error && items.length === 0 && <div className="phrase-favorites-empty"><strong>收藏夹还是空的</strong><span>遇到喜欢的句子，点一下星标就会出现在这里。</span></div>}
+          {items.map((phrase) => (
+            <article className="phrase-favorite-item" key={phrase.phraseDate}>
+              <div className="phrase-favorite-flag"><span>{phrase.flag}</span><small>{phrase.country}</small></div>
+              <div className="phrase-favorite-copy"><small>{phrase.language} · {formatDay(phrase.phraseDate)}</small><h3 lang={phrase.locale}>{phrase.text}</h3><p>{phrase.pronunciation}</p><strong>{phrase.meaning}</strong><span>{phrase.context} · 来源：{phrase.source}</span></div>
+              <div className="phrase-favorite-actions"><button type="button" onClick={() => speakPhrase(phrase)}><span>▶</span>听发音</button><button type="button" disabled={removing === phrase.phraseDate} onClick={() => void removeFavorite(phrase)}><span>★</span>{removing === phrase.phraseDate ? "正在移除" : "取消收藏"}</button></div>
+            </article>
+          ))}
+        </div>
+
+        {error && items.length > 0 && <div className="phrase-favorites-error" role="status">{error}</div>}
+        <footer><span>收藏内容只属于当前账号</span><button type="button" onClick={onClose}>完成</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function NotificationCenter({ user }: { user: UserSummary }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<WorkbenchNotification[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    if (user.edition === "guest") return;
+    try {
+      const result = await api<{ notifications: WorkbenchNotification[] }>(
+        "/api/notifications",
+      );
+      setItems(result.notifications);
+    } catch {
+      // 通知加载失败不影响工作台的其他操作。
+    }
+  }, [user.edition]);
+
+  useEffect(() => {
+    if (user.edition === "guest") return;
+    const first = window.setTimeout(() => void load(), 0);
+    const poll = window.setInterval(() => void load(), 30_000);
+    const refresh = () => void load();
+    window.addEventListener("cabin:notifications-refresh", refresh);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(poll);
+      window.removeEventListener("cabin:notifications-refresh", refresh);
+    };
+  }, [load, user.edition]);
+
+  if (user.edition === "guest") return null;
+
+  const unread = items.filter((item) => !item.readAt).length;
+  const todayPending = items.filter(
+    (item) => item.kind === "today_pending" && !item.readAt,
+  );
+  const updates = items.filter(
+    (item) => item.kind !== "today_pending" || Boolean(item.readAt),
+  );
+
+  async function markRead(item: WorkbenchNotification) {
+    if (!item.readAt) {
+      const now = new Date().toISOString();
+      setItems((current) =>
+        current.map((row) => (row.id === item.id ? { ...row, readAt: now } : row)),
+      );
+      try {
+        await api("/api/notifications", {
+          method: "PATCH",
+          body: JSON.stringify({ id: item.id }),
+        });
+      } catch {
+        await load();
+      }
+    }
+    if (item.itemId) {
+      setOpen(false);
+      window.dispatchEvent(new CustomEvent("cabin:open-schedule"));
+    }
+  }
+
+  async function markAllRead() {
+    setLoading(true);
+    const now = new Date().toISOString();
+    setItems((current) => current.map((item) => ({ ...item, readAt: item.readAt ?? now })));
+    try {
+      await api("/api/notifications", {
+        method: "PATCH",
+        body: JSON.stringify({ all: true }),
+      });
+    } catch {
+      await load();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className={`notification-center ${open ? "is-open" : ""}`}>
+      <button
+        className="notification-bell"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-label={unread ? `提醒，${unread} 条未读` : "提醒"}
+        aria-expanded={open}
+      >
+        <span aria-hidden="true">♢</span>
+        {unread > 0 && <b>{unread > 99 ? "99+" : unread}</b>}
+      </button>
+      {open && (
+        <section className="notification-panel" role="dialog" aria-label="提醒中心">
+          <div className="notification-panel-head">
+            <div><small>NOTIFICATIONS</small><strong>提醒中心</strong></div>
+            <div>
+              {unread > 0 && <button type="button" onClick={() => void markAllRead()} disabled={loading}>全部已读</button>}
+              <button type="button" onClick={() => setOpen(false)} aria-label="关闭提醒">×</button>
+            </div>
+          </div>
+          <div className="notification-scroll">
+            {todayPending.length > 0 && (
+              <div className="notification-group">
+                <p>今日待完成 <span>{todayPending.length}</span></p>
+                {todayPending.map((item) => (
+                  <button className="notification-row is-unread today" type="button" key={item.id} onClick={() => void markRead(item)}>
+                    <i>○</i><div><strong>{item.title}</strong><span>{item.body}</span></div><em>今天</em>
+                  </button>
+                ))}
+              </div>
+            )}
+            {updates.length > 0 && (
+              <div className="notification-group">
+                <p>协作动态</p>
+                {updates.map((item) => (
+                  <button className={`notification-row ${item.readAt ? "" : "is-unread"}`} type="button" key={item.id} onClick={() => void markRead(item)}>
+                    <i>{item.kind === "shared" ? "+" : item.kind === "progress" ? "%" : item.kind === "removed" ? "−" : "↻"}</i>
+                    <div><strong>{item.title}</strong><span>{item.body}</span></div>
+                    <em>{formatNotificationTime(item.createdAt)}</em>
+                  </button>
+                ))}
+              </div>
+            )}
+            {items.length === 0 && (
+              <div className="notification-empty"><span>✓</span><strong>暂时没有新提醒</strong><small>好友关联和进度更新会出现在这里</small></div>
+            )}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function formatNotificationTime(value: string) {
+  const date = new Date(value);
+  const now = new Date();
+  if (toLocalDate(date) === toLocalDate(now)) {
+    return new Intl.DateTimeFormat("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  }
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
 
 function RoomSwitcher({
   current,
@@ -1393,12 +2193,94 @@ function RoomSwitcher({
   openRoom: (room: CabinRoom) => void;
 }) {
   return (
-    <nav className="room-switcher" aria-label="切换木屋房间">
-      <button className={current === "foyer" ? "active" : ""} onClick={() => openRoom("foyer")}>玄关</button>
-      <button className={current === "work" ? "active" : ""} onClick={() => openRoom("work")}>工作</button>
+    <nav className="room-switcher" aria-label="工作台主导航">
+      <button className={current === "work" || current === "foyer" ? "active" : ""} onClick={() => openRoom("work")}>工作台</button>
       <button className={current === "life" ? "active" : ""} onClick={() => openRoom("life")}>生活</button>
       <button className={current === "entertainment" ? "active" : ""} onClick={() => openRoom("entertainment")}>娱乐</button>
     </nav>
+  );
+}
+
+function NavigationUtilities({
+  onOpenGuide,
+  onOpenDownloads,
+}: {
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
+}) {
+  return (
+    <div className="navigation-utilities" aria-label="工作台帮助与资源">
+      <button type="button" onClick={onOpenDownloads} aria-label="下载最新版工作台代码" title="借鉴主包的工作台">
+        <span aria-hidden="true">↓</span><small>下载</small>
+      </button>
+      <button type="button" onClick={onOpenGuide} aria-label="打开新手指引" title="新手指引">
+        <span aria-hidden="true">?</span><small>指引</small>
+      </button>
+    </div>
+  );
+}
+
+function WorkbenchAccountMenu({
+  user,
+  theme,
+  openRoom,
+  onToggleTheme,
+  onOpenGuide,
+  onOpenDownloads,
+}: {
+  user: UserSummary;
+  theme: WorkbenchTheme;
+  openRoom: (room: CabinRoom) => void;
+  onToggleTheme: () => void;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [open]);
+
+  function run(action: () => void) {
+    setOpen(false);
+    action();
+  }
+
+  return (
+    <div className={`workbench-account-menu ${open ? "is-open" : ""}`}>
+      <button
+        className="workbench-account-trigger"
+        type="button"
+        title={user.email}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+        <strong>{user.displayName}</strong>
+        <i aria-hidden="true">⌄</i>
+      </button>
+      {open && (
+        <section className="workbench-account-panel" role="menu" aria-label="个人与工作台设置">
+          <header><span>{user.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{user.displayName}</strong><small>{user.email}</small></div></header>
+          <div className="workbench-account-group">
+            <small>工作台</small>
+            <button type="button" role="menuitem" onClick={() => run(onToggleTheme)}><i>◐</i><span><strong>界面风格</strong><small>{theme === "office" ? "切换到木屋风" : "切换到办公风"}</small></span><b>›</b></button>
+            <button type="button" role="menuitem" onClick={() => run(() => window.dispatchEvent(new CustomEvent("cabin:open-tool-usage")))}><i>▥</i><span><strong>使用状态</strong><small>查看工具多久未使用</small></span><b>›</b></button>
+            {isBobUser(user) && <button type="button" role="menuitem" onClick={() => run(() => openRoom("activity"))}><i>YC</i><span><strong>设备活动</strong><small>查看 YoooClaw 操作记录</small></span><b>›</b></button>}
+          </div>
+          <div className="workbench-account-group">
+            <small>帮助与资源</small>
+            <button type="button" role="menuitem" onClick={() => run(onOpenGuide)}><i>?</i><span><strong>新手指引</strong><small>重新查看使用说明</small></span><b>›</b></button>
+            <button type="button" role="menuitem" onClick={() => run(onOpenDownloads)}><i>↓</i><span><strong>下载代码</strong><small>获取最新版工作台</small></span><b>›</b></button>
+          </div>
+          {user.edition !== "local" && <a className="workbench-account-logout" role="menuitem" href={withBasePath("/logout")}>{user.edition === "guest" ? "退出体验" : "退出登录"}</a>}
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -1409,6 +2291,9 @@ function CabinFoyer({
   moveView,
   resetView,
   openRoom,
+  onToggleTheme,
+  onOpenGuide,
+  onOpenDownloads,
   workSummary,
 }: {
   user: UserSummary;
@@ -1417,6 +2302,9 @@ function CabinFoyer({
   moveView: (event: React.PointerEvent<HTMLElement>) => void;
   resetView: () => void;
   openRoom: (room: CabinRoom) => void;
+  onToggleTheme: () => void;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
   workSummary: { habits: number; schedule: number; done: number };
 }) {
   return (
@@ -1441,9 +2329,14 @@ function CabinFoyer({
           <div><strong>木屋玄关</strong><small>WORK · LIFE · PLAY</small></div>
         </div>
         <div className="world-date"><span>{formatLongDay(today)}</span><i />欢迎回来，选一间房开始</div>
-        <div className="world-user" title={user.email}>
-          <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName}</strong>{user.edition === "local" ? <small>个人本地版</small> : <a href={withBasePath("/logout")}>{user.edition === "guest" ? "退出体验" : "退出"}</a>}</div>
+        <div className="foyer-header-actions">
+          <NavigationUtilities onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+          <ThemeToggle theme="cabin" onToggle={onToggleTheme} />
+          <NotificationCenter user={user} />
+          <div className="world-user" title={user.email}>
+            <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+            <div><strong>{user.displayName}</strong>{user.edition === "local" ? <small>个人本地版</small> : <a href={withBasePath("/logout")}>{user.edition === "guest" ? "退出体验" : "退出"}</a>}</div>
+          </div>
         </div>
       </header>
 
@@ -1492,25 +2385,531 @@ function CabinFoyer({
         <button onClick={() => openRoom("work")}><span>01</span><strong>工作</strong></button>
         <button onClick={() => openRoom("life")}><span>02</span><strong>生活</strong></button>
         <button onClick={() => openRoom("entertainment")}><span>03</span><strong>娱乐</strong></button>
+        {isBobUser(user) && <button onClick={() => openRoom("activity")}><span>04</span><strong>设备记录</strong></button>}
       </nav>
     </main>
   );
 }
 
+function OfficeHeader({
+  user,
+  current,
+  openRoom,
+  onToggleTheme,
+  onOpenGuide,
+  onOpenDownloads,
+}: {
+  user: UserSummary;
+  current: CabinRoom;
+  openRoom: (room: CabinRoom) => void;
+  onToggleTheme: () => void;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
+}) {
+  return (
+    <header className="office-topbar">
+      <button className="office-brand" type="button" onClick={() => openRoom("work")} aria-label="返回工作台">
+        <span>1′</span>
+        <div><strong>木屋工作台</strong><small>OFFICE</small></div>
+      </button>
+      <nav className="office-nav" aria-label="办公风格导航">
+        <button className={current === "work" || current === "foyer" ? "active" : ""} type="button" onClick={() => openRoom("work")}>工作台</button>
+        <button className={current === "life" ? "active" : ""} type="button" onClick={() => openRoom("life")}>生活</button>
+        <button className={current === "entertainment" ? "active" : ""} type="button" onClick={() => openRoom("entertainment")}>娱乐</button>
+      </nav>
+      <div className="office-topbar-actions">
+        <NotificationCenter user={user} />
+        <WorkbenchAccountMenu user={user} theme="office" openRoom={openRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+      </div>
+    </header>
+  );
+}
+
+function DeviceActivityRoom({
+  user,
+  theme,
+  openRoom,
+  onToggleTheme,
+  onOpenGuide,
+  onOpenDownloads,
+}: {
+  user: UserSummary;
+  theme: WorkbenchTheme;
+  openRoom: (room: CabinRoom) => void;
+  onToggleTheme: () => void;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
+}) {
+  const [data, setData] = useState<DeviceActivityData | null>(null);
+  const [filter, setFilter] = useState<"all" | "sent" | "other">("all");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const loadActivity = useCallback(async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:4391/api/activity", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error("设备记录服务暂时不可用");
+      const result = await response.json() as DeviceActivityData;
+      if (!Array.isArray(result.records)) throw new Error("设备记录格式不正确");
+      setData(result);
+      setError("");
+    } catch {
+      setError("没有连接到这台电脑的设备记录服务，请确认 YoooClaw 活动服务正在运行。");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => void loadActivity(), 0);
+    const timer = window.setInterval(() => void loadActivity(), 10_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [loadActivity]);
+
+  const records = (data?.records ?? []).filter((record) => {
+    if (filter === "sent") return record.delivery.status === "sent";
+    if (filter === "other") return record.delivery.status !== "sent";
+    return true;
+  });
+
+  function deliveryCopy(record: DeviceActivityRecord) {
+    if (record.delivery.status === "sent") return { label: "已发送微信", className: "sent" };
+    if (record.delivery.status === "waiting") return { label: "等待微信", className: "waiting" };
+    return { label: "服务启用前", className: "before" };
+  }
+
+  return (
+    <main className={`device-activity-room ${theme === "office" ? "is-office" : "is-cabin"}`}>
+      {theme === "office" ? (
+        <OfficeHeader user={user} current="activity" openRoom={openRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+      ) : (
+        <header className="portal-room-header device-activity-cabin-header">
+          <button className="portal-back" onClick={() => openRoom("work")}><span>←</span><div><small>返回工作台</small><strong>设备活动记录</strong></div></button>
+          <RoomSwitcher current="activity" openRoom={openRoom} />
+          <div className="portal-header-actions">
+            <NotificationCenter user={user} />
+            <WorkbenchAccountMenu user={user} theme="cabin" openRoom={openRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+          </div>
+        </header>
+      )}
+
+      <div className="device-activity-page">
+        <header className="device-activity-titlebar">
+          <div className="device-activity-brand"><span>YC</span><div><p>YOOOCLAW ACTIVITY</p><h1>设备活动记录</h1></div></div>
+          <div className="device-private-state"><i />仅 bob 可见</div>
+        </header>
+
+        <section className="device-activity-hero">
+          <div className="device-activity-intro">
+            <h2>每一句指令，<br />每一步都有迹可循。</h2>
+            <p>集中查看设备转写、Agent 执行动作、最终结果与微信送达状态。</p>
+          </div>
+          <div className="device-activity-health" aria-label="设备链路状态">
+            <div><span><i>声</i>设备指令</span><b>{data?.records.length ? "已有记录" : "等待记录"}</b></div>
+            <div><span><i>执</i>Hermes Agent</span><b>{error ? "等待连接" : "记录正常"}</b></div>
+            <div><span><i>微</i>微信通知</span><b>{data?.wechatReady ? "推送已连接" : "等待记录"}</b></div>
+          </div>
+        </section>
+
+        <section className="device-activity-toolbar">
+          <div><h2>操作时间线</h2><p>{data ? `共 ${data.records.length} 条 · 更新于 ${data.generatedLabel}` : "正在读取记录…"}</p></div>
+          <div className="device-activity-filters" aria-label="筛选活动记录">
+            <button className={filter === "all" ? "active" : ""} type="button" onClick={() => setFilter("all")}>全部</button>
+            <button className={filter === "sent" ? "active" : ""} type="button" onClick={() => setFilter("sent")}>已送达</button>
+            <button className={filter === "other" ? "active" : ""} type="button" onClick={() => setFilter("other")}>待确认</button>
+          </div>
+        </section>
+
+        <section className="device-activity-list" aria-live="polite">
+          {loading && <div className="device-activity-empty">正在加载设备活动…</div>}
+          {!loading && error && (
+            <div className="device-activity-empty is-error"><strong>暂时读不到设备记录</strong><span>{error}</span><button type="button" onClick={() => void loadActivity()}>重新连接</button></div>
+          )}
+          {!loading && !error && records.length === 0 && <div className="device-activity-empty">这个范围暂时没有记录</div>}
+          {!error && records.map((record) => {
+            const delivery = deliveryCopy(record);
+            return (
+              <article className="device-activity-card" key={record.id}>
+                <header><time>{record.timeLabel}</time><span className={delivery.className}><i />{delivery.label}</span></header>
+                <div className="device-activity-conversation">
+                  <p className="device-activity-label">设备原话</p>
+                  <h3>{record.instruction}</h3>
+                  <div className="device-activity-flow">
+                    <div><strong>YoooClaw</strong><span>语音识别并转为文字</span></div>
+                    <i>→</i>
+                    <div><strong>Hermes Agent</strong><span>{record.operations.length ? `执行了 ${record.operations.length} 个操作` : "直接生成回答"}</span></div>
+                  </div>
+                  <p className="device-activity-label">执行结果</p>
+                  <div className="device-activity-result">{record.result || "正在处理中…"}</div>
+                </div>
+                <details className="device-activity-details">
+                  <summary>查看操作详情</summary>
+                  <div className="device-activity-operations">
+                    {record.operations.length === 0 && <div className="device-activity-operation"><strong>本次没有外部工具调用</strong></div>}
+                    {record.operations.map((operation, index) => (
+                      <div className="device-activity-operation" key={`${record.id}-${index}`}>
+                        <strong>步骤 {index + 1} · {operation.tool || "工具调用"}</strong>
+                        <pre>{operation.command || operation.arguments || "已调用"}</pre>
+                        {operation.output && <pre>{operation.output}</pre>}
+                      </div>
+                    ))}
+                    {record.delivery.messageId && <div className="device-activity-operation"><strong>微信消息编号</strong><pre>{record.delivery.messageId}</pre></div>}
+                  </div>
+                </details>
+              </article>
+            );
+          })}
+        </section>
+
+        <footer className="device-activity-footer">记录由 YoooClaw、Hermes 与微信通知桥接服务生成 · 每 10 秒自动刷新</footer>
+      </div>
+    </main>
+  );
+}
+
+function OfficeFoyer({
+  user,
+  today,
+  openRoom,
+  openHabit,
+  openSchedule,
+  openPindou,
+  openFavorites,
+  onToggleTheme,
+  onOpenGuide,
+  onOpenDownloads,
+  workSummary,
+}: {
+  user: UserSummary;
+  today: string;
+  openRoom: (room: CabinRoom) => void;
+  openHabit: () => void;
+  openSchedule: () => void;
+  openPindou: () => void;
+  openFavorites: () => void;
+  onToggleTheme: () => void;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
+  workSummary: { habits: number; schedule: number; done: number };
+}) {
+  const pendingCount = workSummary.habits + workSummary.schedule;
+
+  return (
+    <main className="office-foyer">
+      <OfficeHeader user={user} current="foyer" openRoom={openRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+
+      <div className="office-page">
+        <section className="office-welcome">
+          <div>
+            <p>{formatLongDay(today)} · WORKSPACE</p>
+            <h1>你好，{user.displayName}</h1>
+            <span>今天有 {pendingCount} 项正在推进，从最重要的一件开始。</span>
+          </div>
+          <button type="button" onClick={() => openRoom("work")}>进入工作区 <span>→</span></button>
+        </section>
+
+        <section className="office-stats" aria-label="今日工作概览">
+          <article><span className="office-stat-icon blue">✓</span><div><small>今日完成</small><strong>{workSummary.done}</strong></div><em>项</em></article>
+          <article><span className="office-stat-icon violet">1′</span><div><small>长期习惯</small><strong>{workSummary.habits}</strong></div><em>个进行中</em></article>
+          <article><span className="office-stat-icon cyan">▦</span><div><small>待办日程</small><strong>{workSummary.schedule}</strong></div><em>件待推进</em></article>
+        </section>
+
+        <section className="office-section-heading">
+          <div><p>常用空间</p><h2>快速进入你的工作台</h2></div>
+          <span>所有数据与木屋模式保持同步</span>
+        </section>
+
+        <section className="office-space-grid" aria-label="工作台空间">
+          <button className="office-space-card office-work-card" type="button" onClick={() => openRoom("work")}>
+            <span className="office-space-icon">工</span>
+            <div><small>WORK</small><h3>工作空间</h3><p>习惯、项目和日程，集中在一个清晰的行动面板里。</p></div>
+            <em>{pendingCount} 项进行中 <b>→</b></em>
+          </button>
+          <button className="office-space-card office-life-card" type="button" onClick={() => openRoom("life")}>
+            <span className="office-space-icon">生</span>
+            <div><small>LIFE</small><h3>生活入口</h3><p>常用购物与生活服务，打开即达。</p></div>
+            <em>进入生活市集 <b>→</b></em>
+          </button>
+          <button className="office-space-card office-play-card" type="button" onClick={() => openRoom("entertainment")}>
+            <span className="office-space-icon">娱</span>
+            <div><small>PLAY</small><h3>娱乐入口</h3><p>把放松与内容入口收在一个地方。</p></div>
+            <em>进入娱乐角 <b>→</b></em>
+          </button>
+        </section>
+
+        <section className="office-quick-tools" aria-label="常用工具">
+          <div><p>常用工具</p><span>直接开始，不必绕路</span></div>
+          <button type="button" onClick={openHabit}><i>1′</i><span><small>长期习惯</small><strong>一分小事</strong></span><b>打开</b></button>
+          <button type="button" onClick={openSchedule}><i>▦</i><span><small>任务与项目</small><strong>个人日程</strong></span><b>打开</b></button>
+          <button type="button" onClick={openPindou}><i>豆</i><span><small>创作工具</small><strong>拼豆识图</strong></span><b>打开</b></button>
+          <button type="button" onClick={openFavorites}><i>🗂</i><span><small>灵感收藏</small><strong>灵感库</strong></span><b>打开</b></button>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function OfficeWorkRoom({
+  user,
+  today,
+  openRoom,
+  openHabit,
+  openSchedule,
+  openPindou,
+  openFavorites,
+  toolUsage,
+  onToggleTheme,
+  onOpenGuide,
+  onOpenDownloads,
+  scheduleItems,
+  scheduleEntries,
+  summary,
+}: {
+  user: UserSummary;
+  today: string;
+  openRoom: (room: CabinRoom) => void;
+  openHabit: () => void;
+  openSchedule: () => void;
+  openPindou: () => void;
+  openFavorites: () => void;
+  toolUsage: ToolUsageRecord[];
+  onToggleTheme: () => void;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
+  scheduleItems: ScheduleItem[];
+  scheduleEntries: ScheduleEntry[];
+  summary: { habits: number; tasks: number; projects: number; touchedProjects: number; done: number };
+}) {
+  const tools = [
+    {
+      key: "habit" as const,
+      className: "habit",
+      mark: "1′",
+      eyebrow: "LONG TERM · 长期养成",
+      title: "一分小事",
+      description: "把想坚持的事情缩小到一分钟，每天完成一个清晰闭环。",
+      metric: <><strong>{summary.habits}</strong> 个习惯进行中</>,
+      open: openHabit,
+    },
+    {
+      key: "schedule" as const,
+      className: "schedule",
+      mark: "▦",
+      eyebrow: "SHORT TERM · 短线执行",
+      title: "个人日程",
+      description: "管理今天的事项、持续项目和日历记录，让工作持续向前。",
+      metric: <><strong>{summary.tasks + summary.projects}</strong> 件正在推进</>,
+      open: openSchedule,
+    },
+    {
+      key: "pindou" as const,
+      className: "pindou",
+      mark: "豆",
+      eyebrow: "CREATIVE · 拼豆创作",
+      title: "拼豆识图",
+      description: "在浏览器内上传图纸、框选网格、识别色块并逐色高亮，不上传图片。",
+      metric: <><strong>HTML</strong> 纯浏览器版本</>,
+      open: openPindou,
+    },
+    {
+      key: "favorites" as const,
+      className: "favorites",
+      mark: "🗂",
+      eyebrow: "INSPIRATION · 灵感收藏",
+      title: "灵感库",
+      description: "收好小红书、抖音等平台的视频与笔记，按主旨、作者和标签快速找回。",
+      metric: <><strong>AI</strong> 自动整理与检索</>,
+      open: openFavorites,
+    },
+  ];
+  const activeTools = tools.filter((tool) => !findToolUsage(toolUsage, tool.key)?.isFolded);
+  const activeCoreTools = activeTools.filter((tool) => tool.key === "habit" || tool.key === "schedule");
+  const activeAuxiliaryTools = activeTools.filter((tool) => tool.key === "pindou" || tool.key === "favorites");
+  const foldedTools = tools.filter((tool) => findToolUsage(toolUsage, tool.key)?.isFolded);
+
+  function renderOfficeTool(tool: (typeof tools)[number]) {
+    return (
+      <button key={tool.key} className={`office-tool-panel ${tool.className}`} type="button" onClick={tool.open}>
+        <span className="office-tool-mark">{tool.mark}</span>
+        <div><small>{tool.eyebrow}</small><h3>{tool.title}</h3><p>{tool.description}</p></div>
+        <em>{tool.metric} <b>打开工具 →</b></em>
+      </button>
+    );
+  }
+
+  return (
+    <main className="office-foyer office-work-room">
+      <OfficeHeader user={user} current="work" openRoom={openRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+      <div className="office-page">
+        <section className="office-welcome">
+          <div>
+            <p>{formatLongDay(today)} · WORKSPACE</p>
+            <h1>你好，{user.displayName}</h1>
+            <span>今天的日程、项目和习惯都在这里，从最重要的一件开始。</span>
+          </div>
+          <button type="button" onClick={openSchedule}>打开今日日程 <span>→</span></button>
+        </section>
+
+        <section className="office-stats office-work-stats" aria-label="工作空间概览">
+          <article><span className="office-stat-icon blue">✓</span><div><small>今日完成</small><strong>{summary.done}</strong></div><em>项</em></article>
+          <article><span className="office-stat-icon violet">1′</span><div><small>长期习惯</small><strong>{summary.habits}</strong></div><em>个进行中</em></article>
+          <article><span className="office-stat-icon cyan">▦</span><div><small>短线事项</small><strong>{summary.tasks}</strong></div><em>件待推进</em></article>
+          <article><span className="office-stat-icon amber">▰</span><div><small>持续项目</small><strong>{summary.projects}</strong></div><em>{summary.touchedProjects} 个今日推进</em></article>
+        </section>
+
+        {scheduleItems.length > 0 && (
+          <WorkWeekCalendar
+            items={scheduleItems}
+            entries={scheduleEntries}
+            today={today}
+            onOpen={openSchedule}
+          />
+        )}
+
+        <DailyPhraseCard user={user} />
+
+        <section className="office-section-heading">
+          <div><p>核心工作</p><h2>选择现在要处理的事情</h2></div>
+          <span>日程处理眼前，习惯照顾长期</span>
+        </section>
+
+        <section className="office-tool-panels office-core-tools" aria-label="核心工作工具">
+          {activeCoreTools.map(renderOfficeTool)}
+        </section>
+
+        {activeAuxiliaryTools.length > 0 && (
+          <section className="office-toolbox-card" aria-label="工具箱">
+            <div><i>工</i><span><small>TOOLBOX</small><strong>工具箱</strong><em>辅助创作工具集中收纳，不打断今天的工作。</em></span></div>
+            <div className="office-toolbox-tools">
+              {activeAuxiliaryTools.map((tool) => (
+                <button type="button" key={tool.key} onClick={tool.open}><i className={tool.className}>{tool.mark}</i><span><small>{tool.key === "favorites" ? "灵感收藏" : "创作工具"}</small><strong>{tool.title}</strong></span><b>打开 →</b></button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {foldedTools.length > 0 && (
+          <details className="infrequent-tools-card office-infrequent-tools">
+            <summary><span><strong>不常用工具</strong><small>这些工具由你手动收起</small></span><b>{foldedTools.length} 个</b></summary>
+            <div className="office-tool-panels">{foldedTools.map(renderOfficeTool)}</div>
+          </details>
+        )}
+
+        <section className="office-room-shortcuts" aria-label="其他空间">
+          <div><p>其他空间</p><span>工作完成后，也给生活和休息留位置。</span></div>
+          <button type="button" onClick={() => openRoom("life")}><i>生</i><span><small>LIFE</small><strong>生活入口</strong></span><b>→</b></button>
+          <button type="button" onClick={() => openRoom("entertainment")}><i>娱</i><span><small>PLAY</small><strong>娱乐入口</strong></span><b>→</b></button>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function WorkWeekCalendar({
+  items,
+  entries,
+  today,
+  onOpen,
+}: {
+  items: ScheduleItem[];
+  entries: ScheduleEntry[];
+  today: string;
+  onOpen: () => void;
+}) {
+  const dates = Array.from({ length: 7 }, (_, index) => addDays(today, index));
+  const parentIdsWithStages = new Set(
+    items.filter((item) => item.kind === "project" && item.parentItemId).map((item) => item.parentItemId),
+  );
+  const calendarItems = items.filter(
+    (item) => !(item.kind === "project" && !item.parentItemId && parentIdsWithStages.has(item.id)),
+  );
+
+  function itemsForDate(date: string) {
+    return scheduleItemsRelevantForDate(calendarItems, entries, today, date);
+  }
+
+  return (
+    <section className="work-week-calendar" aria-label="未来七天日历">
+      <div className="work-week-head">
+        <div><p>CALENDAR</p><h2>未来 7 天</h2></div>
+        <button type="button" onClick={onOpen}>查看完整日历 <span>→</span></button>
+      </div>
+      <div className="work-week-grid">
+        {dates.map((date) => {
+          const dayItems = itemsForDate(date);
+          const dayEntries = entries.filter((entry) => entry.entryDate === date);
+          return (
+            <button className={date === today ? "today" : ""} type="button" key={date} onClick={onOpen}>
+              <div className="work-week-date"><small>{date === today ? "今天" : ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][parseDate(date).getDay()]}</small><strong>{parseDate(date).getDate()}</strong></div>
+              <div className="work-week-items">
+                {dayItems.slice(0, 3).map((item) => {
+                  const entry = dayEntries.find((record) => record.itemId === item.id);
+                  const done = entry?.action === "completed";
+                  const collaboration = !item.isOwner
+                    ? `来自 ${item.ownerUsername}`
+                    : item.participantUsernames.length > 0
+                      ? `协作 · ${item.participantUsernames.join("、")}`
+                      : "";
+                  return (
+                    <span className={`${item.kind} ${done ? "done" : ""}`} key={item.id}>
+                      <i />
+                      <b>{item.title}</b>
+                      {item.kind === "project" && (
+                        <small>{item.parentItemId ? `${item.parentTitle ?? "大项目"} · 阶段` : "项目"} · {entry?.progress ?? item.progress}%{item.dueDate ? ` · 截止 ${formatDay(item.dueDate)}` : ""}</small>
+                      )}
+                      {collaboration && <em>{collaboration}</em>}
+                    </span>
+                  );
+                })}
+                {dayItems.length === 0 && <span className="empty">暂无安排</span>}
+                {dayItems.length > 3 && <span className="more">还有 {dayItems.length - 3} 项</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ScheduleCollaborationMeta({ item }: { item: ScheduleItem }) {
+  if (!item.isOwner) {
+    return <span className="collaboration-pill shared">来自 {item.ownerUsername}</span>;
+  }
+  if (item.participantUsernames.length > 0) {
+    return <span className="collaboration-pill">协作 · {item.participantUsernames.join("、")}</span>;
+  }
+  return null;
+}
+
 function PortalRoom({
   user,
+  theme,
+  onToggleTheme,
   category,
   links,
   onBack,
   switchRoom,
   reload,
+  onOpenGuide,
+  onOpenDownloads,
 }: {
   user: UserSummary;
+  theme: WorkbenchTheme;
+  onToggleTheme: () => void;
   category: "life" | "entertainment";
   links: PortalLink[];
   onBack: () => void;
   switchRoom: (room: CabinRoom) => void;
   reload: () => Promise<void>;
+  onOpenGuide: () => void;
+  onOpenDownloads: () => void;
 }) {
   const [manage, setManage] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -1585,12 +2984,19 @@ function PortalRoom({
   }
 
   return (
-    <main className={`portal-room ${life ? "life-room" : "entertainment-room"}`}>
-      <header className="portal-room-header">
-        <button className="portal-back" onClick={onBack}><span>←</span><div><small>返回玄关</small><strong>{copy.title}</strong></div></button>
-        <RoomSwitcher current={category} openRoom={switchRoom} />
-        <div className="portal-user" title={user.email}><span>{user.displayName.slice(0, 1).toUpperCase()}</span><strong>{user.displayName}</strong></div>
-      </header>
+    <main className={`portal-room ${theme === "office" ? "office-portal-room" : ""} ${life ? "life-room" : "entertainment-room"}`}>
+      {theme === "office" ? (
+        <OfficeHeader user={user} current={category} openRoom={switchRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+      ) : (
+        <header className="portal-room-header">
+          <button className="portal-back" onClick={onBack}><span>←</span><div><small>返回工作台</small><strong>{copy.title}</strong></div></button>
+          <RoomSwitcher current={category} openRoom={switchRoom} />
+          <div className="portal-header-actions">
+            <NotificationCenter user={user} />
+            <WorkbenchAccountMenu user={user} theme="cabin" openRoom={switchRoom} onToggleTheme={onToggleTheme} onOpenGuide={onOpenGuide} onOpenDownloads={onOpenDownloads} />
+          </div>
+        </header>
+      )}
 
       <div className="portal-room-scenery" aria-hidden="true">
         <span className="portal-beam beam-a" /><span className="portal-beam beam-b" />
@@ -1717,7 +3123,19 @@ function AddPortalModal({
   );
 }
 
-function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => void }) {
+function ScheduleWorkspace({
+  user,
+  theme,
+  onToggleTheme,
+  onBack,
+  onUse,
+}: {
+  user: UserSummary;
+  theme: WorkbenchTheme;
+  onToggleTheme: () => void;
+  onBack: () => void;
+  onUse: () => void;
+}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [tab, setTab] = useState<"today" | "calendar" | "projects">("today");
   const [createOpen, setCreateOpen] = useState(false);
@@ -1729,6 +3147,7 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
   const load = useCallback(async () => {
     const result = await api<DashboardData>("/api/dashboard");
     setData(result);
+    window.dispatchEvent(new CustomEvent("cabin:notifications-refresh"));
   }, []);
 
   useEffect(() => {
@@ -1762,7 +3181,7 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
     ),
   );
   const activeProjects = items
-    .filter((item) => item.kind === "project" && item.status === "active" && item.startDate <= today)
+    .filter((item) => item.kind === "project" && !item.parentItemId && item.status === "active" && item.startDate <= today)
     .sort(prioritySort);
 
   async function completeTask(item: ScheduleItem) {
@@ -1792,8 +3211,52 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
     }
   }
 
+  async function convertTaskToProject(item: ScheduleItem) {
+    if (!window.confirm(`把「${item.title}」转为持续项目吗？项目会从今天开始，你可以继续设置截止日期和拆解阶段。`)) return;
+    try {
+      const result = await api<{ item: ScheduleItem }>(`/api/schedule/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "convert_to_project", startDate: today }),
+      });
+      await load();
+      setTab("projects");
+      setEditingItem(result.item);
+      setToast("已转为项目，可以继续规划");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法转为项目");
+    }
+  }
+
+  async function restoreProject(item: ScheduleItem) {
+    if (!window.confirm(`还原「${item.title}」并重新放回正在推进吗？`)) return;
+    try {
+      await api(`/api/schedule/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "restore" }),
+      });
+      setToast("项目已还原");
+      await load();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法还原");
+    }
+  }
+
+  async function deleteProject(item: ScheduleItem) {
+    if (!window.confirm(`永久删除「${item.title}」吗？项目阶段和全部推进记录都会一起删除，且无法恢复。`)) return;
+    try {
+      await api(`/api/schedule/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "delete" }),
+      });
+      setToast("项目已永久删除");
+      await load();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法删除");
+    }
+  }
+
   return (
-    <main className="schedule-shell">
+    <main className="schedule-shell" onClickCapture={onUse}>
       <header className="schedule-header">
         <button className="schedule-back" onClick={onBack}><span>←</span><div><small>返回木屋</small><strong>个人工作台</strong></div></button>
         <nav>
@@ -1801,7 +3264,11 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
           <button className={tab === "calendar" ? "active" : ""} onClick={() => setTab("calendar")}>日历</button>
           <button className={tab === "projects" ? "active" : ""} onClick={() => setTab("projects")}>项目</button>
         </nav>
-        <div className="schedule-account"><span>{user.displayName.slice(0, 1).toUpperCase()}</span><strong>{user.displayName}</strong></div>
+        <div className="schedule-header-actions">
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+          <NotificationCenter user={user} />
+          <div className="schedule-account"><span>{user.displayName.slice(0, 1).toUpperCase()}</span><strong>{user.displayName}</strong></div>
+        </div>
       </header>
 
       <div className="schedule-wrap">
@@ -1822,6 +3289,8 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
             onUpdate={setProjectUpdate}
             onEdit={setEditingItem}
             onArchive={(item) => void archiveItem(item)}
+            onRestore={(item) => void restoreProject(item)}
+            onDelete={(item) => void deleteProject(item)}
           />
         ) : (
           <div className="today-dashboard">
@@ -1838,8 +3307,8 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
                   return (
                     <article className={`daily-task ${done ? "done" : ""}`} key={item.id}>
                       <button className="task-check" onClick={() => !done && void completeTask(item)} disabled={done}>{done ? "✓" : ""}</button>
-                      <div className="task-copy"><div><span className={`priority-pill ${item.priority}`}>{PRIORITY_LABELS[item.priority]}</span>{item.repeatDaily && <span className="repeat-pill">每日重复</span>}</div><h3>{item.title}</h3>{item.note && <p>{item.note}</p>}</div>
-                      <div className="task-meta"><small>{item.repeatDaily ? "今天的一次" : `计划于 ${formatDay(item.startDate)}`}</small><button onClick={() => setEditingItem(item)}>编辑</button><button onClick={() => void archiveItem(item)}>结束</button></div>
+                      <div className="task-copy"><div><span className={`priority-pill ${item.priority}`}>{PRIORITY_LABELS[item.priority]}</span>{item.repeatDaily && <span className="repeat-pill">每日重复</span>}<ScheduleCollaborationMeta item={item} /></div><h3>{item.title}</h3>{item.note && <p>{item.note}</p>}</div>
+                      <div className="task-meta"><small>{item.isOwner ? (item.repeatDaily ? "今天的一次" : `计划于 ${formatDay(item.startDate)}`) : `来自 ${item.ownerUsername}`}</small>{item.isOwner && <><button onClick={() => setEditingItem(item)}>编辑</button><button className="convert-project-button" onClick={() => void convertTaskToProject(item)}>转为项目</button><button onClick={() => void archiveItem(item)}>结束</button></>}</div>
                     </article>
                   );
                 })}
@@ -1859,7 +3328,7 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
                   const touched = touchedIds.has(project.id);
                   return (
                     <button className={`today-project ${touched ? "touched" : ""}`} key={project.id} onClick={() => setProjectUpdate(project)}>
-                      <div><span className={`priority-dot ${project.priority}`} /><small>{touched ? "今日已推进" : project.dueDate ? `截止 ${formatDay(project.dueDate)}` : "持续项目"}</small><strong>{project.title}</strong></div>
+                      <div><span className={`priority-dot ${project.priority}`} /><small>{touched ? "今日已推进" : project.dueDate ? `截止 ${formatDay(project.dueDate)}` : "持续项目"}</small><ScheduleCollaborationMeta item={project} /><strong>{project.title}</strong></div>
                       <span className="project-ring" style={{ "--project-progress": `${project.progress * 3.6}deg` } as React.CSSProperties}><em>{project.progress}%</em></span>
                     </button>
                   );
@@ -1871,22 +3340,33 @@ function ScheduleWorkspace({ user, onBack }: { user: UserSummary; onBack: () => 
         )}
       </div>
 
-      {createOpen && <ScheduleItemModal today={today} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setToast("已经放进你的工作台"); await load(); }} />}
-      {editingItem && <ScheduleItemModal today={today} item={editingItem} onClose={() => setEditingItem(null)} onSaved={async () => { setEditingItem(null); setToast("调整已保存"); await load(); }} />}
+      {createOpen && <ScheduleItemModal today={today} friends={data?.friends ?? []} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setToast("已经放进你的工作台"); await load(); }} />}
+      {editingItem && <ScheduleItemModal today={today} friends={data?.friends ?? []} item={editingItem} projectStages={items.filter((candidate) => candidate.parentItemId === editingItem.id && candidate.status !== "archived")} onClose={() => setEditingItem(null)} onSaved={async () => { setEditingItem(null); setToast("调整已保存"); await load(); }} />}
       {projectUpdate && <ProjectUpdateModal project={projectUpdate} today={today} onClose={() => setProjectUpdate(null)} onSaved={async () => { setProjectUpdate(null); setToast("今天的推进已记录"); await load(); }} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
   );
 }
 
+type ProjectStageDraft = {
+  id: string | null;
+  title: string;
+  startDate: string;
+  dueDate: string;
+};
+
 function ScheduleItemModal({
   today,
+  friends,
   item,
+  projectStages = [],
   onClose,
   onSaved,
 }: {
   today: string;
+  friends: string[];
   item?: ScheduleItem;
+  projectStages?: ScheduleItem[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -1897,8 +3377,27 @@ function ScheduleItemModal({
   const [repeatDaily, setRepeatDaily] = useState(item?.repeatDaily ?? false);
   const [startDate, setStartDate] = useState(item?.startDate ?? today);
   const [dueDate, setDueDate] = useState(item?.dueDate ?? "");
+  const [participantUsernames, setParticipantUsernames] = useState<string[]>(item?.participantUsernames ?? []);
+  const [stages, setStages] = useState<ProjectStageDraft[]>(() => projectStages.map((stage) => ({
+    id: stage.id,
+    title: stage.title,
+    startDate: stage.startDate,
+    dueDate: stage.dueDate ?? stage.startDate,
+  })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  function addStage() {
+    const previous = stages[stages.length - 1];
+    const nextStart = previous?.dueDate ? addDays(previous.dueDate, 1) : startDate;
+    const boundedStart = dueDate && nextStart > dueDate ? dueDate : nextStart;
+    setStages((current) => [...current, {
+      id: null,
+      title: "",
+      startDate: boundedStart,
+      dueDate: dueDate || boundedStart,
+    }]);
+  }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -1907,7 +3406,18 @@ function ScheduleItemModal({
     try {
       await api(item ? `/api/schedule/items/${item.id}` : "/api/schedule/items", {
         method: item ? "PATCH" : "POST",
-        body: JSON.stringify({ action: item ? "update" : undefined, kind, title, note, priority, repeatDaily, startDate, dueDate }),
+        body: JSON.stringify({
+          action: item ? "update" : undefined,
+          kind,
+          title,
+          note,
+          priority,
+          repeatDaily,
+          startDate,
+          dueDate,
+          participantUsernames,
+          stages: kind === "project" ? stages : undefined,
+        }),
       });
       await onSaved();
     } catch (err) {
@@ -1922,16 +3432,58 @@ function ScheduleItemModal({
         <button className="modal-close" onClick={onClose} aria-label="关闭">×</button>
         <p className="eyebrow">{item ? "EDIT" : "NEW COORDINATE"}</p>
         <h2>{item ? "调整这条坐标" : "今天，要记下什么？"}</h2>
-        {!item && <div className="kind-switch"><button className={kind === "task" ? "active" : ""} onClick={() => setKind("task")}><span>✓</span><div><strong>普通事项</strong><small>一次完成，或每天重复</small></div></button><button className={kind === "project" ? "active" : ""} onClick={() => setKind("project")}><span>▰</span><div><strong>持续项目</strong><small>每天推进一点百分比</small></div></button></div>}
+        {!item && <div className="kind-switch"><button className={kind === "task" ? "active" : ""} onClick={() => setKind("task")}><span>✓</span><div><strong>普通事项</strong><small>一次完成，或每天重复</small></div></button><button className={kind === "project" ? "active" : ""} onClick={() => setKind("project")}><span>▰</span><div><strong>持续项目</strong><small>每次变化，都是一次推进</small></div></button></div>}
         <form onSubmit={save}>
           <label htmlFor="schedule-title">{kind === "project" ? "项目名称" : "事项名称"}</label>
           <input id="schedule-title" autoFocus maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={kind === "project" ? "例如：完成个人网站" : "例如：早上查看邮件"} />
           <div className="form-grid">
-            <div><label htmlFor="schedule-start">开始日期</label><input id="schedule-start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} disabled={Boolean(item)} /></div>
+            <div><label htmlFor="schedule-start">开始日期</label><input id="schedule-start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} disabled={Boolean(item && kind === "task")} /></div>
             {kind === "project" && <div><label htmlFor="schedule-due">截止日期（可选）</label><input id="schedule-due" type="date" min={startDate} value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></div>}
           </div>
+          {kind === "project" && (
+            <fieldset className="project-stage-field">
+              <legend>项目拆解（可选）</legend>
+              <p>每个阶段会以自己的名称和跨度显示在日历上，并自动继承大项目的颜色与协作成员。</p>
+              <div className="project-stage-list">
+                {stages.map((stage, index) => (
+                  <article key={stage.id ?? `new-stage-${index}`}>
+                    <div className="project-stage-row-head"><strong>阶段 {String(index + 1).padStart(2, "0")}</strong><button type="button" onClick={() => setStages((current) => current.filter((_, stageIndex) => stageIndex !== index))}>移除</button></div>
+                    <label htmlFor={`project-stage-title-${index}`}>阶段名称</label>
+                    <input id={`project-stage-title-${index}`} maxLength={80} value={stage.title} onChange={(event) => setStages((current) => current.map((value, stageIndex) => stageIndex === index ? { ...value, title: event.target.value } : value))} placeholder="例如：完成信息架构" />
+                    <div className="form-grid">
+                      <div><label htmlFor={`project-stage-start-${index}`}>开始日期</label><input id={`project-stage-start-${index}`} type="date" min={startDate} max={dueDate || undefined} value={stage.startDate} onChange={(event) => setStages((current) => current.map((value, stageIndex) => stageIndex === index ? { ...value, startDate: event.target.value } : value))} /></div>
+                      <div><label htmlFor={`project-stage-due-${index}`}>结束日期</label><input id={`project-stage-due-${index}`} type="date" min={stage.startDate || startDate} max={dueDate || undefined} value={stage.dueDate} onChange={(event) => setStages((current) => current.map((value, stageIndex) => stageIndex === index ? { ...value, dueDate: event.target.value } : value))} /></div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <button className="project-stage-add" type="button" onClick={addStage}>＋ 添加一个项目阶段</button>
+            </fieldset>
+          )}
           {kind === "task" && <label className="repeat-toggle"><input type="checkbox" checked={repeatDaily} onChange={(event) => setRepeatDaily(event.target.checked)} /><span /><div><strong>每天重复</strong><small>每天生成独立记录，昨天没完成也不会堆到今天</small></div></label>}
           <fieldset className="priority-field"><legend>优先级</legend><div>{(["important", "normal", "later"] as const).map((value) => <button type="button" className={`${value} ${priority === value ? "active" : ""}`} key={value} onClick={() => setPriority(value)}><i />{PRIORITY_LABELS[value]}</button>)}</div></fieldset>
+          {friends.length > 0 && (
+            <fieldset className="friend-field">
+              <legend>关联好友（可多选）</legend>
+              <p>{kind === "project" ? "关联后会自动出现在对方日历，所有项目成员都能编辑项目、阶段和进度。" : "关联后会自动出现在对方日历，对方可以更新完成状态。"}</p>
+              <div>
+                {friends.map((username) => {
+                  const selected = participantUsernames.includes(username);
+                  return (
+                    <button
+                      type="button"
+                      className={selected ? "active" : ""}
+                      key={username}
+                      onClick={() => setParticipantUsernames((current) => selected ? current.filter((value) => value !== username) : [...current, username])}
+                      aria-pressed={selected}
+                    >
+                      <span>{username.slice(0, 1).toUpperCase()}</span><strong>{username}</strong><i>{selected ? "✓" : "+"}</i>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
           <label htmlFor="schedule-note">备注（可选）</label>
           <textarea id="schedule-note" maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="给未来的自己一点上下文…" />
           {error && <p className="form-error">{error}</p>}
@@ -1957,8 +3509,18 @@ function ProjectUpdateModal({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const changed = progress !== project.progress;
+
+  function changeProgress(value: number) {
+    setProgress(Math.max(0, Math.min(100, Math.round(value))));
+    setError("");
+  }
 
   async function save() {
+    if (!changed) {
+      setError("请先调整进度；增加或回调都算推进");
+      return;
+    }
     const completeProject = progress === 100
       ? window.confirm("进度已经达到 100%，要把这个项目完成归档吗？")
       : false;
@@ -1980,17 +3542,22 @@ function ProjectUpdateModal({
       <section className="modal-card project-update-modal" role="dialog" aria-modal="true">
         <button className="modal-close" onClick={onClose} aria-label="关闭">×</button>
         <p className="eyebrow">TODAY&apos;S PROGRESS</p>
-        <h2>今天推进了多少？</h2>
-        <p><strong>{project.title}</strong>{project.dueDate ? ` · 截止 ${formatDay(project.dueDate)}` : " · 持续项目"}</p>
+        <h2>今天，项目有了什么变化？</h2>
+        <p><strong>{project.title}</strong>{project.parentItemId ? ` · ${project.parentTitle ?? "大项目"}的阶段` : project.dueDate ? ` · 截止 ${formatDay(project.dueDate)}` : " · 持续项目"}</p>
         <div className="progress-editor">
           <div className="large-project-ring" style={{ "--project-progress": `${progress * 3.6}deg` } as React.CSSProperties}><span><strong>{progress}</strong><small>%</small></span></div>
-          <div><input aria-label="项目进度" type="range" min="0" max="100" step="5" value={progress} onChange={(event) => setProgress(Number(event.target.value))} /><div className="range-labels"><span>刚开始</span><span>完成</span></div></div>
+          <div className="progress-controls">
+            <div className="progress-number-field"><label htmlFor="project-progress-number">自定义进度</label><span><input id="project-progress-number" aria-label="自定义项目进度百分比" type="number" inputMode="numeric" min="0" max="100" step="1" value={progress} onChange={(event) => changeProgress(Number(event.target.value))} /><b>%</b></span></div>
+            <input aria-label="项目进度" type="range" min="0" max="100" step="1" value={progress} onChange={(event) => changeProgress(Number(event.target.value))} />
+            <div className="range-labels"><span>0 · 重新梳理</span><span>100 · 完成</span></div>
+            <p className={`progress-change-summary ${changed ? "changed" : ""}`}>{changed ? <>上次 {project.progress}% <b>→</b> 本次 {progress}% · {progress > project.progress ? "向前推进" : "重新校准"}</> : <>上次记录为 {project.progress}%，调整任意 1% 即算推进</>}</p>
+          </div>
         </div>
         <label htmlFor="project-progress-note">今天处理了什么？（可选）</label>
         <textarea id="project-progress-note" maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：把首页的信息结构理清了。" />
-        <p className="progress-hint">即使百分比没有变化，保存后也会标记“今日已推进”。</p>
+        <p className="progress-hint">进度增加或回调都算推进：变化说明事情正在变好，或你更清楚怎样让它变好。</p>
         {error && <p className="form-error">{error}</p>}
-        <button className="primary-button full-button" onClick={() => void save()} disabled={saving}>{saving ? "正在记录…" : "记录今天的推进"}</button>
+        <button className="primary-button full-button" onClick={() => void save()} disabled={saving || !changed}>{saving ? "正在记录…" : changed ? "记录这次变化" : "调整进度后保存"}</button>
       </section>
     </div>
   );
@@ -2003,6 +3570,8 @@ function ProjectBoard({
   onUpdate,
   onEdit,
   onArchive,
+  onRestore,
+  onDelete,
 }: {
   projects: ScheduleItem[];
   entries: ScheduleEntry[];
@@ -2010,13 +3579,16 @@ function ProjectBoard({
   onUpdate: (project: ScheduleItem) => void;
   onEdit: (project: ScheduleItem) => void;
   onArchive: (project: ScheduleItem) => void;
+  onRestore: (project: ScheduleItem) => void;
+  onDelete: (project: ScheduleItem) => void;
 }) {
-  const active = projects.filter((project) => project.status === "active");
-  const history = projects.filter((project) => project.status !== "active");
+  const rootProjects = projects.filter((project) => !project.parentItemId);
+  const active = rootProjects.filter((project) => project.status === "active");
+  const history = rootProjects.filter((project) => project.status !== "active");
 
   function exportProject(project: ScheduleItem) {
-    const logs = entries.filter((entry) => entry.itemId === project.id && entry.note).sort((a, b) => b.entryDate.localeCompare(a.entryDate));
-    const text = `# ${project.title}｜项目推进记录\n\n${logs.map((entry) => `## ${formatDay(entry.entryDate)} · ${entry.progress ?? project.progress}%\n\n${entry.note}`).join("\n\n")}`;
+    const logs = entries.filter((entry) => entry.itemId === project.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const text = `# ${project.title}｜项目推进记录\n\n${logs.map((entry) => `## ${formatDay(entry.entryDate)} · ${entry.actorUsername} · ${entry.previousProgress ?? "?"}% → ${entry.progress ?? project.progress}%\n\n${entry.note || "未填写备注"}`).join("\n\n")}`;
     const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -2031,28 +3603,162 @@ function ProjectBoard({
       <div className="project-board-head"><div><p>ACTIVE PROJECTS</p><h2>正在推进的项目</h2></div><span>{active.length} 个项目</span></div>
       <div className="project-card-grid">
         {active.map((project) => {
-          const todayEntry = entries.find((entry) => entry.itemId === project.id && entry.entryDate === today);
-          const logs = entries.filter((entry) => entry.itemId === project.id && entry.note);
+          const projectEntries = entries.filter((entry) => entry.itemId === project.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          const todayEntry = projectEntries.find((entry) => entry.entryDate === today);
+          const logs = projectEntries;
+          const stages = projects
+            .filter((candidate) => candidate.parentItemId === project.id && candidate.status !== "archived")
+            .sort((left, right) => left.startDate.localeCompare(right.startDate) || left.createdAt.localeCompare(right.createdAt));
           return (
             <article className={`project-card ${todayEntry ? "touched" : ""}`} key={project.id}>
-              <div className="project-card-top"><span className={`priority-pill ${project.priority}`}>{PRIORITY_LABELS[project.priority]}</span><div><button onClick={() => onEdit(project)}>编辑</button><button onClick={() => onArchive(project)}>结束</button></div></div>
+              <div className="project-card-top"><div><span className={`priority-pill ${project.priority}`}>{PRIORITY_LABELS[project.priority]}</span><ScheduleCollaborationMeta item={project} /></div><div><button onClick={() => onEdit(project)}>编辑 / 拆解</button>{project.isOwner && <button onClick={() => onArchive(project)}>结束</button>}</div></div>
               <h3>{project.title}</h3>
               <p>{project.note || "这是一个持续推进的项目。"}</p>
               <div className="project-progress-line"><i style={{ width: `${project.progress}%` }} /><span>{project.progress}%</span></div>
-              <div className="project-card-meta"><span>{todayEntry ? "✓ 今日已推进" : project.dueDate ? `截止 ${formatDay(project.dueDate)}` : "没有截止日期"}</span><small>{logs.length} 条推进笔记</small></div>
-              {todayEntry?.note && <blockquote>“{todayEntry.note}”</blockquote>}
-              <div className="project-card-actions"><button onClick={() => onUpdate(project)}>{todayEntry ? "更新今日进度" : "推进一下"}</button>{logs.length > 0 && <button onClick={() => exportProject(project)}>下载记录</button>}</div>
+              <div className="project-card-meta"><span>{todayEntry ? "✓ 今日已推进" : project.dueDate ? `截止 ${formatDay(project.dueDate)}` : "没有截止日期"}</span><small>{stages.length > 0 ? `${stages.length} 个阶段` : `${logs.length} 条推进记录`}</small></div>
+              {stages.length > 0 && (
+                <div className="project-stage-board">
+                  <div><strong>项目阶段</strong><small>同色显示在月历</small></div>
+                  {stages.map((stage, index) => (
+                    <article key={stage.id} className={stage.status === "completed" ? "completed" : ""}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div><strong>{stage.title}</strong><small>{formatDay(stage.startDate)} — {formatDay(stage.dueDate ?? stage.startDate)}</small></div>
+                      <em>{stage.progress}%</em>
+                      {stage.status === "active" && <button type="button" onClick={() => onUpdate(stage)}>推进</button>}
+                    </article>
+                  ))}
+                </div>
+              )}
+              <div className="project-card-actions"><button onClick={() => onUpdate(project)}>{todayEntry ? "继续推进" : "推进一下"}</button>{logs.length > 0 && <button onClick={() => exportProject(project)}>下载记录</button>}</div>
+              <div className="project-progress-history">
+                <div className="project-progress-history-head"><strong>全部推进记录</strong><small>{logs.length} 次变化</small></div>
+                {logs.length === 0 ? <p>还没有推进记录，第一次变化会显示在这里。</p> : <div>{logs.map((entry) => {
+                  const previous = entry.previousProgress;
+                  const direction = previous === null || previous === undefined ? "记录" : (entry.progress ?? 0) >= previous ? "向前推进" : "重新校准";
+                  return <article key={entry.id}><span>{entry.actorUsername.slice(0,1).toUpperCase()}</span><div><strong>{entry.actorUsername}</strong><small>{formatDay(entry.entryDate)} · {direction}</small>{entry.note && <p>{entry.note}</p>}</div><em>{previous ?? "?"}% <b>→</b> {entry.progress ?? project.progress}%</em></article>;
+                })}</div>}
+              </div>
             </article>
           );
         })}
         {active.length === 0 && <div className="project-board-empty"><span>◇</span><h3>还没有正在推进的项目</h3><p>回到“今日”，创建一个持续项目。</p></div>}
       </div>
-      {history.length > 0 && <div className="project-history"><h3>项目历史</h3>{history.map((project) => <div key={project.id}><span>{project.status === "completed" ? "✓" : "—"}</span><strong>{project.title}</strong><small>{project.status === "completed" ? "已完成" : "已结束"}</small><em>{project.progress}%</em></div>)}</div>}
+      {history.length > 0 && <div className="project-history"><h3>项目历史</h3>{history.map((project) => <div key={project.id}><span>{project.status === "completed" ? "✓" : "—"}</span><strong>{project.title}</strong><small>{project.status === "completed" ? "已完成" : "已结束"}</small><em>{project.progress}%</em>{project.isOwner && <div className="project-history-actions"><button type="button" onClick={() => onRestore(project)}>还原</button><button type="button" className="danger" onClick={() => onDelete(project)}>删除</button></div>}</div>)}</div>}
     </section>
   );
 }
 
-function ScheduleCalendar({ items, entries, today }: { items: ScheduleItem[]; entries: ScheduleEntry[]; today: string }) {
+type ScheduleCalendarSegment = {
+  item: ScheduleItem;
+  startColumn: number;
+  endColumn: number;
+  startDate: string;
+  endDate: string;
+  lane: number;
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+  hasCompletion: boolean;
+};
+
+function laterScheduleDate(left: string, right: string) {
+  return left > right ? left : right;
+}
+
+function getScheduleItemRange(item: ScheduleItem, entries: ScheduleEntry[], today: string) {
+  const lastEntryDate = entries.reduce<string | null>((latest, entry) => {
+    if (entry.itemId !== item.id) return latest;
+    return !latest || entry.entryDate > latest ? entry.entryDate : latest;
+  }, null);
+
+  let endDate: string;
+  if (item.completedDate) {
+    endDate = item.completedDate;
+  } else if (item.status === "archived") {
+    endDate = lastEntryDate ?? item.startDate;
+  } else if (item.kind === "project") {
+    endDate = laterScheduleDate(item.dueDate ?? today, today);
+  } else {
+    // An unfinished task stays visible through today. A future task is shown on its start day.
+    endDate = laterScheduleDate(item.startDate, today);
+  }
+
+  return {
+    startDate: item.startDate,
+    endDate: laterScheduleDate(item.startDate, endDate),
+  };
+}
+
+function scheduleItemsRelevantForDate(
+  items: ScheduleItem[],
+  entries: ScheduleEntry[],
+  today: string,
+  date: string,
+) {
+  return items
+    .map((item) => ({ item, range: getScheduleItemRange(item, entries, today) }))
+    .filter(({ range }) => date >= range.startDate && date <= range.endDate)
+    .sort((left, right) => {
+      const startDifference = left.range.startDate.localeCompare(right.range.startDate);
+      if (startDifference !== 0) return startDifference;
+      if (left.item.kind !== right.item.kind) return left.item.kind === "project" ? -1 : 1;
+      return right.range.endDate.localeCompare(left.range.endDate);
+    })
+    .map(({ item }) => item);
+}
+
+function buildScheduleWeekSegments(
+  items: ScheduleItem[],
+  entries: ScheduleEntry[],
+  today: string,
+  weekCells: Array<{ value: string }>,
+) {
+  const weekStart = weekCells[0].value;
+  const weekEnd = weekCells[6].value;
+  const laneEnds: number[] = [];
+
+  return items
+    .map((item) => ({ item, range: getScheduleItemRange(item, entries, today) }))
+    .filter(({ range }) => range.startDate <= weekEnd && range.endDate >= weekStart)
+    .sort((left, right) => {
+      const startDifference = left.range.startDate.localeCompare(right.range.startDate);
+      if (startDifference !== 0) return startDifference;
+      if (left.item.kind !== right.item.kind) return left.item.kind === "project" ? -1 : 1;
+      return right.range.endDate.localeCompare(left.range.endDate);
+    })
+    .map(({ item, range }) => {
+      const startDate = range.startDate > weekStart ? range.startDate : weekStart;
+      const endDate = range.endDate < weekEnd ? range.endDate : weekEnd;
+      const startColumn = weekCells.findIndex((cell) => cell.value === startDate);
+      const endColumn = weekCells.findIndex((cell) => cell.value === endDate);
+      let lane = laneEnds.findIndex((occupiedUntil) => startColumn > occupiedUntil);
+      if (lane === -1) lane = laneEnds.length;
+      laneEnds[lane] = endColumn;
+
+      return {
+        item,
+        startColumn,
+        endColumn,
+        startDate,
+        endDate,
+        lane,
+        continuesBefore: range.startDate < weekStart,
+        continuesAfter: range.endDate > weekEnd,
+        hasCompletion: entries.some(
+          (entry) => entry.itemId === item.id && entry.entryDate >= startDate && entry.entryDate <= endDate,
+        ),
+      } satisfies ScheduleCalendarSegment;
+    });
+}
+
+function ScheduleCalendar({
+  items,
+  entries,
+  today,
+}: {
+  items: ScheduleItem[];
+  entries: ScheduleEntry[];
+  today: string;
+}) {
   const [month, setMonth] = useState(() => {
     const date = parseDate(today);
     return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -2063,16 +3769,23 @@ function ScheduleCalendar({ items, entries, today }: { items: ScheduleItem[]; en
     const date = new Date(month.getFullYear(), month.getMonth(), index - firstOffset + 1);
     return { value: toLocalDate(date), number: date.getDate(), muted: date.getMonth() !== month.getMonth() };
   });
+  const weeks = Array.from({ length: 6 }, (_, weekIndex) => cells.slice(weekIndex * 7, weekIndex * 7 + 7));
+  const parentIdsWithStages = new Set(
+    items.filter((item) => item.kind === "project" && item.parentItemId).map((item) => item.parentItemId),
+  );
+  const calendarItems = items.filter(
+    (item) => !(item.kind === "project" && !item.parentItemId && parentIdsWithStages.has(item.id)),
+  );
+  const colorGroupIds = Array.from(new Set(
+    [...items]
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+      .map((item) => item.parentItemId ?? item.id),
+  ));
+  const eventColorByGroupId = new Map(
+    colorGroupIds.map((groupId, index) => [groupId, SCHEDULE_EVENT_COLORS[index % SCHEDULE_EVENT_COLORS.length]]),
+  );
 
-  function relevantForDate(item: ScheduleItem, date: string) {
-    if (date < item.startDate || (item.completedDate && date > item.completedDate)) return false;
-    if (item.status === "archived" && !entries.some((entry) => entry.itemId === item.id && entry.entryDate === date)) return false;
-    if (item.kind === "project") return date <= today;
-    if (item.repeatDaily) return date <= today;
-    return date >= item.startDate && date <= (item.completedDate ?? today);
-  }
-
-  const selectedItems = items.filter((item) => relevantForDate(item, selected));
+  const selectedItems = scheduleItemsRelevantForDate(calendarItems, entries, today, selected);
   const selectedEntries = entries.filter((entry) => entry.entryDate === selected);
 
   return (
@@ -2081,15 +3794,49 @@ function ScheduleCalendar({ items, entries, today }: { items: ScheduleItem[]; en
         <div className="schedule-calendar-toolbar"><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>←</button><div><small>MY COORDINATES</small><strong>{month.getFullYear()} 年 {month.getMonth() + 1} 月</strong></div><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>→</button></div>
         <div className="schedule-weekdays">{WEEKDAYS.map((day) => <span key={day}>{day}</span>)}</div>
         <div className="schedule-month-grid">
-          {cells.map((cell) => {
-            const dayItems = items.filter((item) => relevantForDate(item, cell.value));
-            const dayEntries = entries.filter((entry) => entry.entryDate === cell.value);
+          {weeks.map((weekCells, weekIndex) => {
+            const segments = buildScheduleWeekSegments(calendarItems, entries, today, weekCells);
+            const eventLanes = Math.max(1, ...segments.map((segment) => segment.lane + 1));
             return (
-              <button key={cell.value} className={`${cell.muted ? "muted" : ""} ${cell.value === today ? "today" : ""} ${cell.value === selected ? "selected" : ""}`} onClick={() => setSelected(cell.value)}>
-                <span>{cell.number}</span>
-                <div>{dayItems.slice(0, 3).map((item) => <i key={item.id} className={`${item.kind} ${dayEntries.some((entry) => entry.itemId === item.id) ? "done" : ""}`} />)}</div>
-                {dayItems.length > 3 && <small>+{dayItems.length - 3}</small>}
-              </button>
+              <div
+                className="schedule-week-row"
+                key={weekCells[0].value}
+                style={{ "--schedule-event-lanes": eventLanes } as React.CSSProperties}
+              >
+                <div className="schedule-week-days">
+                  {weekCells.map((cell) => (
+                    <button
+                      key={cell.value}
+                      type="button"
+                      className={`${cell.muted ? "muted" : ""} ${cell.value === today ? "today" : ""} ${cell.value === selected ? "selected" : ""}`}
+                      onClick={() => setSelected(cell.value)}
+                      aria-label={formatLongDay(cell.value)}
+                    >
+                      <span>{cell.number}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="schedule-week-events" aria-label={`第 ${weekIndex + 1} 周日程`}>
+                  {segments.map((segment) => (
+                    <button
+                      key={`${segment.item.id}-${segment.startDate}`}
+                      type="button"
+                      className={`schedule-event-bar ${segment.item.kind} priority-${segment.item.priority} ${segment.hasCompletion ? "has-completion" : ""} ${segment.continuesBefore ? "continues-before" : ""} ${segment.continuesAfter ? "continues-after" : ""}`}
+                      style={{
+                        gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`,
+                        gridRow: segment.lane + 1,
+                        backgroundColor: eventColorByGroupId.get(segment.item.parentItemId ?? segment.item.id) ?? SCHEDULE_EVENT_COLORS[0],
+                      }}
+                      onClick={() => setSelected(segment.startDate)}
+                      title={`${segment.item.title} · ${formatDay(segment.startDate)} 至 ${formatDay(segment.endDate)}`}
+                      aria-label={`${segment.item.kind === "project" ? "项目" : "事项"}：${segment.item.title}，${formatDay(segment.startDate)}至${formatDay(segment.endDate)}`}
+                    >
+                      <span>{segment.item.title}</span>
+                      {segment.hasCompletion ? <i aria-hidden="true">✓</i> : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -2097,7 +3844,7 @@ function ScheduleCalendar({ items, entries, today }: { items: ScheduleItem[]; en
       <aside className="schedule-day-detail">
         <p>{selected === today ? "TODAY" : "DAY RECORD"}</p>
         <h2>{formatLongDay(selected)}</h2>
-        {selectedItems.length === 0 ? <div className="schedule-day-empty"><span>·</span><strong>这一天很轻</strong><small>没有事项或项目记录</small></div> : <div className="schedule-day-items">{selectedItems.map((item) => { const entry = selectedEntries.find((record) => record.itemId === item.id); return <article key={item.id}><span className={entry ? "done" : ""}>{entry ? "✓" : item.kind === "project" ? "◇" : "○"}</span><div><small>{item.kind === "project" ? "项目" : item.repeatDaily ? "每日事项" : "一次事项"}</small><strong>{item.title}</strong>{entry?.note && <p>“{entry.note}”</p>}</div>{item.kind === "project" && <em>{entry?.progress ?? item.progress}%</em>}</article>; })}</div>}
+        {selectedItems.length === 0 ? <div className="schedule-day-empty"><span>·</span><strong>这一天很轻</strong><small>没有事项或项目记录</small></div> : <div className="schedule-day-items">{selectedItems.map((item) => { const entry = selectedEntries.find((record) => record.itemId === item.id); return <article key={item.id}><span className={entry ? "done" : ""}>{entry ? "✓" : item.kind === "project" ? "◇" : "○"}</span><div><small>{item.parentItemId ? `项目阶段 · ${item.parentTitle ?? "大项目"}` : item.kind === "project" ? "项目" : item.repeatDaily ? "每日事项" : "一次事项"}</small><ScheduleCollaborationMeta item={item} /><strong>{item.title}</strong>{entry?.note && <p>“{entry.note}” · {entry.actorUsername}</p>}</div>{item.kind === "project" && <em>{entry?.progress ?? item.progress}%</em>}</article>; })}</div>}
       </aside>
     </section>
   );

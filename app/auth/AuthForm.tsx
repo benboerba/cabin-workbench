@@ -24,9 +24,8 @@ export function AuthForm() {
     setBusy(true);
     const data = new FormData(event.currentTarget);
     const payload = {
-      email: data.get("email"),
+      username: data.get("username"),
       password: data.get("password"),
-      displayName: data.get("displayName"),
     };
 
     try {
@@ -59,8 +58,8 @@ export function AuthForm() {
       <h1>{mode === "login" ? "欢迎回到木屋" : "领取你的木屋钥匙"}</h1>
       <p className="auth-intro">
         {mode === "login"
-          ? "用邮箱和密码进入，你的记录只会显示在自己的账户里。"
-          : "不需要验证码。注册后即可保存一分小事、日程与自定义入口。"}
+          ? "用用户名和密码进入，你的记录只会显示在自己的账户里。"
+          : "输入用户名并设置密码，注册后即可保存自己的记录。"}
       </p>
 
       <div className="auth-tabs" aria-label="登录或注册">
@@ -69,15 +68,9 @@ export function AuthForm() {
       </div>
 
       <form className="auth-form" onSubmit={submit}>
-        {mode === "register" && (
-          <label>
-            <span>你的称呼 <small>选填</small></span>
-            <input name="displayName" type="text" maxLength={30} autoComplete="nickname" placeholder="例如：琴涵" />
-          </label>
-        )}
         <label>
-          <span>邮箱</span>
-          <input name="email" type="email" required autoComplete="email" placeholder="name@example.com" />
+          <span>用户名</span>
+          <input name="username" type="text" required minLength={2} maxLength={30} autoCapitalize="none" autoComplete="username" placeholder="请输入用户名" />
         </label>
         <label>
           <span>密码</span>

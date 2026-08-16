@@ -21,12 +21,26 @@ export type AppUser = {
 const LOCAL_USER_ID = "local-personal-workbench";
 const LOCAL_USER_EMAIL = "local@cabin.local";
 
-export function normalizeEmail(value: unknown): string | null {
+export function normalizeUsername(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const email = value.trim().toLowerCase();
-  if (email.length < 3 || email.length > 254) return null;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
-  return email;
+  const username = value.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{1,29}$/.test(username)) return null;
+  return username;
+}
+
+export function canRegisterUsername(username: string): boolean {
+  return getRegistrationUsernames().includes(username);
+}
+
+export function getRegistrationUsernames(): string[] {
+  return Array.from(
+    new Set(
+      (process.env.REGISTRATION_USERNAMES ?? "")
+        .split(",")
+        .map((value) => normalizeUsername(value))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
 }
 
 export function validatePassword(value: unknown): value is string {
@@ -194,11 +208,6 @@ async function getLocalUser(): Promise<AppUser> {
     onboardingVersion: row.onboardingVersion,
     edition: "local",
   };
-}
-
-export function displayNameFromEmail(email: string): string {
-  const localPart = email.split("@")[0]?.trim();
-  return (localPart || "木屋住客").slice(0, 30);
 }
 
 function hashSessionToken(token: string): string {

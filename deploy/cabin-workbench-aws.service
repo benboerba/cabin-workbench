@@ -1,0 +1,25 @@
+[Unit]
+Description=Cabin Workbench web application (AWS canonical)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+UMask=0077
+WorkingDirectory=/home/ec2-user/apps/cabin-workbench-current
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=4270
+EnvironmentFile=/etc/cabin-workbench.env
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=4
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

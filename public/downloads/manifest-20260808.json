@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-08-08T10:21:04.956Z",
+  "releaseVersion": "20260808",
+  "packages": [
+    {
+      "edition": "个人本地版",
+      "filename": "cabin-workbench-local-20260808.zip",
+      "bytes": 8822925,
+      "commit": "958b0600c86f",
+      "releaseVersion": "20260808"
+    },
+    {
+      "edition": "多用户服务器版",
+      "filename": "cabin-workbench-server-20260808.zip",
+      "bytes": 8832755,
+      "commit": "958b0600c86f",
+      "releaseVersion": "20260808"
+    }
+  ]
+}

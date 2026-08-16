@@ -14,6 +14,7 @@ const child = spawn(path.join(root, "node_modules", ".bin", "next"), ["start", "
     APP_MODE: "server",
     DATABASE_PATH: path.join(root, ".codex_work", `guest-smoke-${Date.now()}.db`),
     COOKIE_SECURE: "false",
+    REGISTRATION_USERNAMES: "guesttest",
     NEXT_TELEMETRY_DISABLED: "1",
     NEXT_PUBLIC_BASE_PATH: testBasePath,
   },
@@ -52,13 +53,22 @@ try {
   assert.equal(write.status, 403);
   assert.match(await write.text(), /游客模式只能查看/);
 
+  const blockedRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      username: "notallowed",
+      password: "Guest-Test-Password-2026!",
+    }),
+  });
+  assert.equal(blockedRegistration.status, 400);
+
   const registration = await fetch(`${baseUrl}/api/auth/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      email: `guest-conversion-${Date.now()}@example.com`,
+      username: "guesttest",
       password: "Guest-Test-Password-2026!",
-      displayName: "正式账户测试",
     }),
   });
   assert.equal(registration.status, 201, await registration.text());

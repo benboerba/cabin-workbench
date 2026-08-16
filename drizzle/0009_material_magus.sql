@@ -1,0 +1,1 @@
+ALTER TABLE `tool_usage` ADD `is_folded` integer DEFAULT false NOT NULL;

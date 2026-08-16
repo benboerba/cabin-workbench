@@ -20,7 +20,7 @@ export default async function Home() {
             回到一座属于你的私人木屋：工作间收好“一分小事”和“个人日程”，生活市集快速抵达，娱乐角自在放松。
           </p>
           <div className="signin-actions">
-            <a className="primary-button signin-button" href={withBasePath("/auth?mode=login")}>邮箱登录</a>
+            <a className="primary-button signin-button" href={withBasePath("/auth?mode=login")}>用户名登录</a>
             <a className="secondary-button signin-button" href={withBasePath("/auth?mode=register")}>注册账户</a>
             <a className="guest-button signin-button" href={withBasePath("/guest")}><span>◇</span> 游客体验 <small>只看不保存</small></a>
           </div>

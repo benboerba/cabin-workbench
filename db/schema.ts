@@ -116,6 +116,7 @@ export const scheduleItems = sqliteTable(
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
+    parentItemId: text("parent_item_id"),
     kind: text("kind", { enum: ["task", "project"] }).notNull(),
     title: text("title").notNull(),
     note: text("note").notNull().default(""),
@@ -142,6 +143,7 @@ export const scheduleItems = sqliteTable(
   (table) => [
     index("idx_schedule_items_user_status").on(table.userId, table.status),
     index("idx_schedule_items_user_kind").on(table.userId, table.kind),
+    index("idx_schedule_items_parent_status").on(table.parentItemId, table.status),
   ],
 );
 
@@ -155,17 +157,85 @@ export const scheduleEntries = sqliteTable(
     userId: text("user_id").notNull(),
     entryDate: text("entry_date").notNull(),
     action: text("action", { enum: ["completed", "touched"] }).notNull(),
+    previousProgress: integer("previous_progress"),
     progress: integer("progress"),
     note: text("note").notNull().default(""),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
-    uniqueIndex("idx_schedule_entries_item_date").on(
-      table.itemId,
-      table.entryDate,
-    ),
+    index("idx_schedule_entries_item_date").on(table.itemId, table.entryDate),
     index("idx_schedule_entries_user_date").on(table.userId, table.entryDate),
+  ],
+);
+
+export const scheduleParticipants = sqliteTable(
+  "schedule_participants",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => scheduleItems.id, { onDelete: "cascade" }),
+    username: text("username").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("idx_schedule_participants_item_username").on(
+      table.itemId,
+      table.username,
+    ),
+    index("idx_schedule_participants_username").on(table.username),
+  ],
+);
+
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    recipientUsername: text("recipient_username").notNull(),
+    actorUsername: text("actor_username"),
+    itemId: text("item_id").references(() => scheduleItems.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind", {
+      enum: ["today_pending", "shared", "progress", "changed", "removed"],
+    }).notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    uniqueKey: text("unique_key"),
+    readAt: text("read_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("idx_notifications_recipient_created").on(
+      table.recipientUsername,
+      table.createdAt,
+    ),
+    index("idx_notifications_recipient_read").on(
+      table.recipientUsername,
+      table.readAt,
+    ),
+    uniqueIndex("idx_notifications_unique_key").on(table.uniqueKey),
+  ],
+);
+
+export const dailyPhraseStates = sqliteTable(
+  "daily_phrase_states",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    phraseDate: text("phrase_date").notNull(),
+    phraseId: text("phrase_id").notNull(),
+    swapCount: integer("swap_count").notNull().default(0),
+    learnedAt: text("learned_at"),
+    favoriteAt: text("favorite_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("idx_daily_phrase_states_user_date").on(table.userId, table.phraseDate),
+    index("idx_daily_phrase_states_user_favorite").on(table.userId, table.favoriteAt),
   ],
 );
 
@@ -196,5 +266,25 @@ export const portalLinks = sqliteTable(
       table.userId,
       table.defaultKey,
     ),
+  ],
+);
+
+export const toolUsage = sqliteTable(
+  "tool_usage",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    toolKey: text("tool_key", {
+      enum: ["habit", "schedule", "pindou", "favorites"],
+    }).notNull(),
+    openCount: integer("open_count").notNull().default(0),
+    firstSeenAt: text("first_seen_at").notNull(),
+    lastOpenedAt: text("last_opened_at"),
+    isFolded: integer("is_folded", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("idx_tool_usage_user_tool").on(table.userId, table.toolKey),
   ],
 );

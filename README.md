@@ -16,7 +16,7 @@ npm run local
 
 ### 多用户服务器版
 
-- 邮箱 + 密码注册登录，不发送验证码或验证邮件
+- 用户名 + 密码注册登录，只有服务器白名单内的用户名可以注册
 - 游客模式可查看示例功能，所有写入操作由服务器统一拒绝
 - 密码使用 scrypt 加密摘要，数据库不保存明文密码
 - 每个账户的数据严格按用户 ID 隔离
@@ -48,7 +48,7 @@ npm run local:smoke
 
 ## 生成公开下载包
 
-提交代码后运行 `npm run package:editions`，会在 `public/downloads/` 生成个人本地版和多用户服务器版两个 ZIP。压缩包只取 Git 已跟踪的公开文件，因此不会包含数据库、环境变量、密钥、依赖目录或构建缓存。
+运行 `npm run package:editions`，会在 `public/downloads/` 生成带日期的个人本地版和多用户服务器版两个 ZIP。压缩包读取当前工作区里的最新版公开源码，并只额外收录拼豆纯 HTML 页面，不会包含数据库、环境变量、密钥、依赖目录、构建缓存或其他未发布素材。如需同一天生成多个版本，可通过 `PACKAGE_VERSION=20260808-v2 npm run package:editions` 指定新版本号。
 
 ## EC2 部署
 
@@ -62,6 +62,7 @@ npm run local:smoke
 ```dotenv
 DATABASE_PATH=/home/ec2-user/data/cabin-workbench/oneminute.db
 COOKIE_SECURE=true
+REGISTRATION_USERNAMES=alice,friend2
 ```
 
 上线后通过 `/api/health` 检查应用和数据库状态。SQLite 备份时应同时处理数据库及 WAL 文件，推荐先使用 SQLite 的在线备份命令生成一致快照。
@@ -71,6 +72,8 @@ COOKIE_SECURE=true
 ```dotenv
 NEXT_PUBLIC_BASE_PATH=/workbench
 ```
+
+当前工作台服务器发布时使用 `npm run server:build`，确保登录页等按路由拆分的脚本也带有 `/workbench` 前缀；运行环境仍需保留同名变量。
 
 这样页面、接口、登录、静态资源和下载文件都会统一使用 `/workbench/` 前缀，不占用域名原有的根路径与 `/api`。
 
@@ -94,4 +97,4 @@ NEXT_PUBLIC_BASE_PATH=/workbench
 
 ## 数据说明
 
-ChatGPT Sites 旧版以站点专属的 ChatGPT 用户 ID 标识账户，无法安全地自动映射到新邮箱账户。因此服务器版默认创建全新的账户与数据空间；旧站仍可保留，后续可按明确账户关系做一次性导入。
+ChatGPT Sites 旧版以站点专属的 ChatGPT 用户 ID 标识账户，无法安全地自动映射到新用户名账户。因此服务器版默认创建全新的账户与数据空间；旧站仍可保留，后续可按明确账户关系做一次性导入。

@@ -6,6 +6,9 @@ export function getGuestDashboard() {
   const readingId = "guest-habit-reading";
   const wordsId = "guest-habit-words";
   const projectId = "guest-project-workbench";
+  const stageStructureId = "guest-project-workbench-structure";
+  const stageInterfaceId = "guest-project-workbench-interface";
+  const stageLaunchId = "guest-project-workbench-launch";
   const mailId = "guest-task-mail";
   const planId = "guest-task-plan";
 
@@ -18,13 +21,16 @@ export function getGuestDashboard() {
     ...Array.from({ length: 2 }, (_, index) => guestCheckin(wordsId, addDays(today, index - 2), "resilient · curious · deliberate", now)),
   ];
   const scheduleItems = [
-    { id: mailId, kind: "task", title: "早上查看邮件", note: "处理重要来信", priority: "normal", repeatDaily: true, startDate: addDays(today, -8), dueDate: null, progress: 0, status: "active", completedDate: null, createdAt: now, updatedAt: now },
-    { id: planId, kind: "task", title: "整理明天的三件要事", note: "下班前完成", priority: "important", repeatDaily: false, startDate: today, dueDate: today, progress: 0, status: "active", completedDate: null, createdAt: now, updatedAt: now },
-    { id: projectId, kind: "project", title: "搭建自己的木屋工作台", note: "先让最常用的流程顺手起来", priority: "important", repeatDaily: false, startDate: addDays(today, -12), dueDate: addDays(today, 14), progress: 65, status: "active", completedDate: null, createdAt: now, updatedAt: now },
+    { id: mailId, parentItemId: null, parentTitle: null, kind: "task", title: "早上查看邮件", note: "处理重要来信", priority: "normal", repeatDaily: true, startDate: addDays(today, -8), dueDate: null, progress: 0, status: "active", completedDate: null, ownerUsername: "游客", participantUsernames: [], isOwner: true, createdAt: now, updatedAt: now },
+    { id: planId, parentItemId: null, parentTitle: null, kind: "task", title: "整理明天的三件要事", note: "下班前完成", priority: "important", repeatDaily: false, startDate: today, dueDate: today, progress: 0, status: "active", completedDate: null, ownerUsername: "游客", participantUsernames: [], isOwner: true, createdAt: now, updatedAt: now },
+    { id: projectId, parentItemId: null, parentTitle: null, kind: "project", title: "搭建自己的木屋工作台", note: "先让最常用的流程顺手起来", priority: "important", repeatDaily: false, startDate: addDays(today, -12), dueDate: addDays(today, 14), progress: 65, status: "active", completedDate: null, ownerUsername: "游客", participantUsernames: [], isOwner: true, createdAt: now, updatedAt: now },
+    { id: stageStructureId, parentItemId: projectId, parentTitle: "搭建自己的木屋工作台", kind: "project", title: "梳理工作台结构", note: "", priority: "important", repeatDaily: false, startDate: addDays(today, -12), dueDate: addDays(today, -5), progress: 100, status: "completed", completedDate: addDays(today, -5), ownerUsername: "游客", participantUsernames: [], isOwner: true, createdAt: now, updatedAt: now },
+    { id: stageInterfaceId, parentItemId: projectId, parentTitle: "搭建自己的木屋工作台", kind: "project", title: "完成核心界面", note: "", priority: "important", repeatDaily: false, startDate: addDays(today, -4), dueDate: addDays(today, 4), progress: 70, status: "active", completedDate: null, ownerUsername: "游客", participantUsernames: [], isOwner: true, createdAt: now, updatedAt: now },
+    { id: stageLaunchId, parentItemId: projectId, parentTitle: "搭建自己的木屋工作台", kind: "project", title: "测试并正式上线", note: "", priority: "important", repeatDaily: false, startDate: addDays(today, 5), dueDate: addDays(today, 14), progress: 0, status: "active", completedDate: null, ownerUsername: "游客", participantUsernames: [], isOwner: true, createdAt: now, updatedAt: now },
   ];
   const scheduleEntries = [
-    { id: "guest-entry-mail", itemId: mailId, entryDate: today, action: "completed", progress: null, note: "重要邮件已处理", createdAt: now, updatedAt: now },
-    { id: "guest-entry-project", itemId: projectId, entryDate: today, action: "touched", progress: 65, note: "完成了游客体验页面", createdAt: now, updatedAt: now },
+    { id: "guest-entry-mail", itemId: mailId, entryDate: today, action: "completed", previousProgress: null, progress: null, note: "重要邮件已处理", actorUsername: "游客", createdAt: now, updatedAt: now },
+    { id: "guest-entry-project", itemId: projectId, entryDate: today, action: "touched", previousProgress: 50, progress: 65, note: "完成了游客体验页面", actorUsername: "游客", createdAt: now, updatedAt: now },
   ];
   const portalLinks = DEFAULT_PORTAL_LINKS.map((link, index) => ({
     id: `guest-link-${link.defaultKey}`,
@@ -36,7 +42,7 @@ export function getGuestDashboard() {
     updatedAt: now,
   }));
 
-  return { challenges, checkins, sessions: [], scheduleItems, scheduleEntries, portalLinks };
+  return { challenges, checkins, sessions: [], scheduleItems, scheduleEntries, portalLinks, friends: [], notifications: [] };
 }
 
 function guestCheckin(challengeId: string, habitDate: string, note: string, now: string) {

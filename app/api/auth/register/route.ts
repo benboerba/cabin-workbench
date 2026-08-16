@@ -2,40 +2,38 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
 import {
+  canRegisterUsername,
   createSession,
-  displayNameFromEmail,
   hashPassword,
-  normalizeEmail,
+  normalizeUsername,
   validatePassword,
 } from "../../../lib/auth";
 
 export async function POST(request: Request) {
-  let body: { email?: unknown; password?: unknown; displayName?: unknown };
+  let body: { username?: unknown; password?: unknown };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "请求内容不正确" }, { status: 400 });
   }
 
-  const email = normalizeEmail(body.email);
-  if (!email) {
-    return Response.json({ error: "请输入有效的邮箱地址" }, { status: 400 });
-  }
-  if (!validatePassword(body.password)) {
-    return Response.json({ error: "密码需要 8—128 个字符" }, { status: 400 });
+  const username = normalizeUsername(body.username);
+  if (
+    !username ||
+    !validatePassword(body.password) ||
+    !canRegisterUsername(username)
+  ) {
+    return Response.json({ error: "暂时无法注册，请检查信息" }, { status: 400 });
   }
 
-  const requestedName =
-    typeof body.displayName === "string" ? body.displayName.trim() : "";
-  const displayName = (requestedName || displayNameFromEmail(email)).slice(0, 30);
   const db = getDb();
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.email, email))
+    .where(eq(users.email, username))
     .limit(1);
   if (existing) {
-    return Response.json({ error: "这个邮箱已经注册，可以直接登录" }, { status: 409 });
+    return Response.json({ error: "暂时无法注册，请检查信息" }, { status: 400 });
   }
 
   const now = new Date().toISOString();
@@ -43,16 +41,19 @@ export async function POST(request: Request) {
   try {
     await db.insert(users).values({
       id: userId,
-      email,
-      displayName,
+      email: username,
+      displayName: username,
       passwordHash: await hashPassword(body.password),
       createdAt: now,
       updatedAt: now,
     });
   } catch {
-    return Response.json({ error: "这个邮箱已经注册，可以直接登录" }, { status: 409 });
+    return Response.json({ error: "暂时无法注册，请检查信息" }, { status: 400 });
   }
 
   await createSession(userId);
-  return Response.json({ user: { email, displayName } }, { status: 201 });
+  return Response.json(
+    { user: { username, displayName: username } },
+    { status: 201 },
+  );
 }

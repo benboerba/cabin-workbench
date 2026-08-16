@@ -2,6 +2,11 @@ import { getDb } from "../../../../db";
 import { scheduleItems } from "../../../../db/schema";
 import { isHabitDate } from "../../../lib/dates";
 import { requireApiUser } from "../../../lib/current-user";
+import {
+  replaceParticipants,
+  sanitizeParticipantUsernames,
+} from "../../../lib/schedule-collaboration";
+import { parseScheduleStages } from "../../../lib/schedule-stages";
 
 const PRIORITIES = new Set(["important", "normal", "later"]);
 
@@ -30,11 +35,18 @@ export async function POST(request: Request) {
   if (note.length > 2000) {
     return Response.json({ error: "备注不能超过 2000 个字" }, { status: 400 });
   }
+  const parsedStages = kind === "project"
+    ? parseScheduleStages(payload.stages, payload.startDate as string, dueDate as string | null)
+    : { stages: [], error: null };
+  if (parsedStages.error) {
+    return Response.json({ error: parsedStages.error }, { status: 400 });
+  }
 
   const now = new Date().toISOString();
   const item = {
     id: crypto.randomUUID(),
     userId: auth.user.userId,
+    parentItemId: null,
     kind,
     title,
     note,
@@ -49,5 +61,47 @@ export async function POST(request: Request) {
     updatedAt: now,
   };
   await getDb().insert(scheduleItems).values(item);
-  return Response.json({ item }, { status: 201 });
+  if (parsedStages.stages.length > 0) {
+    await getDb().insert(scheduleItems).values(
+      parsedStages.stages.map((stage) => ({
+        id: crypto.randomUUID(),
+        userId: auth.user.userId,
+        parentItemId: item.id,
+        kind: "project" as const,
+        title: stage.title,
+        note: "",
+        priority,
+        repeatDaily: false,
+        startDate: stage.startDate,
+        dueDate: stage.dueDate,
+        progress: 0,
+        status: "active" as const,
+        completedDate: null,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
+  }
+  const participantUsernames = sanitizeParticipantUsernames(
+    payload.participantUsernames,
+    auth.user.email,
+  );
+  await replaceParticipants(
+    item.id,
+    auth.user.email,
+    participantUsernames,
+    item.title,
+  );
+  return Response.json(
+    {
+      item: {
+        ...item,
+        ownerUsername: auth.user.email,
+        participantUsernames,
+        isOwner: true,
+        parentTitle: null,
+      },
+    },
+    { status: 201 },
+  );
 }
