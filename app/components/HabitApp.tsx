@@ -2185,6 +2185,16 @@ function formatNotificationTime(value: string) {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
+function formatProgressEntryTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
 function RoomSwitcher({
   current,
   openRoom,
@@ -3342,7 +3352,7 @@ function ScheduleWorkspace({
 
       {createOpen && <ScheduleItemModal today={today} friends={data?.friends ?? []} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setToast("已经放进你的工作台"); await load(); }} />}
       {editingItem && <ScheduleItemModal today={today} friends={data?.friends ?? []} item={editingItem} projectStages={items.filter((candidate) => candidate.parentItemId === editingItem.id && candidate.status !== "archived")} onClose={() => setEditingItem(null)} onSaved={async () => { setEditingItem(null); setToast("调整已保存"); await load(); }} />}
-      {projectUpdate && <ProjectUpdateModal project={projectUpdate} today={today} onClose={() => setProjectUpdate(null)} onSaved={async () => { setProjectUpdate(null); setToast("今天的推进已记录"); await load(); }} />}
+      {projectUpdate && <ProjectUpdateModal project={projectUpdate} entries={entries.filter((entry) => entry.itemId === projectUpdate.id && entry.progress !== null)} today={today} onClose={() => setProjectUpdate(null)} onSaved={async () => { setProjectUpdate(null); setToast("今天的推进已记录"); await load(); }} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
   );
@@ -3496,11 +3506,13 @@ function ScheduleItemModal({
 
 function ProjectUpdateModal({
   project,
+  entries,
   today,
   onClose,
   onSaved,
 }: {
   project: ScheduleItem;
+  entries: ScheduleEntry[];
   today: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -3510,6 +3522,7 @@ function ProjectUpdateModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const changed = progress !== project.progress;
+  const progressEntries = [...entries].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 
   function changeProgress(value: number) {
     setProgress(Math.max(0, Math.min(100, Math.round(value))));
@@ -3558,6 +3571,14 @@ function ProjectUpdateModal({
         <p className="progress-hint">进度增加或回调都算推进：变化说明事情正在变好，或你更清楚怎样让它变好。</p>
         {error && <p className="form-error">{error}</p>}
         <button className="primary-button full-button" onClick={() => void save()} disabled={saving || !changed}>{saving ? "正在记录…" : changed ? "记录这次变化" : "调整进度后保存"}</button>
+        <div className="project-progress-history project-update-history">
+          <div className="project-progress-history-head"><strong>进度修改记录</strong><small>{progressEntries.length} 次修改 · 所有项目成员可见</small></div>
+          {progressEntries.length === 0 ? <p>还没有进度修改记录，保存第一次变化后会显示在这里。</p> : <div>{progressEntries.map((entry) => {
+            const previous = entry.previousProgress;
+            const direction = previous === null || previous === undefined ? "首次记录" : (entry.progress ?? 0) >= previous ? "向前推进" : "重新校准";
+            return <article key={entry.id}><span>{entry.actorUsername.slice(0, 1).toUpperCase()}</span><div><strong>{entry.actorUsername}</strong><small>{formatProgressEntryTime(entry.createdAt)} 修改 · {direction}</small>{entry.note && <p>{entry.note}</p>}</div><em>{previous ?? "?"}% <b>→</b> {entry.progress ?? project.progress}%</em></article>;
+          })}</div>}
+        </div>
       </section>
     </div>
   );

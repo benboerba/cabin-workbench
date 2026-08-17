@@ -25,6 +25,10 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.match(app, /step="1"/);
   assert.match(app, /自定义项目进度百分比/);
   assert.match(app, /增加或回调都算推进/);
+  assert.match(app, /进度修改记录/);
+  assert.match(app, /所有项目成员可见/);
+  assert.match(app, /formatProgressEntryTime\(entry\.createdAt\)/);
+  assert.match(app, /entry\.itemId === projectUpdate\.id && entry\.progress !== null/);
   assert.match(app, /今天，给重要的小事/);
   assert.match(app, /正在坚持/);
   assert.match(app, /新手指引/);
