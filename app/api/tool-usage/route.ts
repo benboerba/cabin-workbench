@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, like } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { getDb } from "../../../db";
-import { toolUsage } from "../../../db/schema";
+import { notifications, toolUsage } from "../../../db/schema";
 import { requireApiUser } from "../../lib/current-user";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +93,15 @@ export async function POST(request: Request) {
         updatedAt: now,
       },
     });
+    await db
+      .update(notifications)
+      .set({ readAt: now })
+      .where(and(
+        eq(notifications.recipientUsername, auth.user.email),
+        eq(notifications.kind, "tool_inactive"),
+        like(notifications.uniqueKey, `tool-inactive:${auth.user.userId}:${body.toolKey}:%`),
+        isNull(notifications.readAt),
+      ));
   } else {
     const isFolded = action === "fold";
     await db.insert(toolUsage).values({

@@ -52,7 +52,7 @@ type WorkbenchNotification = {
   recipientUsername: string;
   actorUsername: string | null;
   itemId: string | null;
-  kind: "today_pending" | "shared" | "progress" | "changed" | "removed";
+  kind: "today_pending" | "shared" | "progress" | "changed" | "removed" | "tool_inactive";
   title: string;
   body: string;
   readAt: string | null;
@@ -211,7 +211,6 @@ const SCHEDULE_EVENT_COLORS = [
   "rgba(191, 225, 226, 0.78)",
   "rgba(239, 201, 184, 0.78)",
 ] as const;
-const PRIORITY_ORDER = { important: 0, normal: 1, later: 2 } as const;
 
 function toLocalDate(date = new Date()) {
   const year = date.getFullYear();
@@ -1817,6 +1816,8 @@ function ToolUsageModal({
   });
   const usedTodayCount = rows.filter((item) => item.lastOpenedAt && getToolIdleDays(item) === 0).length;
   const staleCount = rows.filter((item) => isInfrequentTool(item)).length;
+  const chartMaxDays = Math.max(10, Math.ceil(Math.max(...rows.map(getToolIdleDays)) / 5) * 5);
+  const chartTicks = [chartMaxDays, Math.round(chartMaxDays * 0.75), Math.round(chartMaxDays * 0.5), Math.round(chartMaxDays * 0.25), 0];
 
   return (
     <div className="tool-usage-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -1827,24 +1828,33 @@ function ToolUsageModal({
           <div className="tool-usage-summary"><article><small>今天使用</small><strong>{usedTodayCount}</strong><span>个</span></article><article><small>超过 7 天</small><strong>{staleCount}</strong><span>个</span></article></div>
         </header>
 
-        <div className="tool-usage-chart" aria-label="工具未使用天数图表">
-          {rows.map((item) => {
-            const tool = TOOL_USAGE_PRESENTATION[item.toolKey];
-            const recommended = isInfrequentTool(item) && !item.isFolded;
-            const idleDays = getToolIdleDays(item);
-            const width = idleDays === 0 ? 0 : Math.max(8, Math.min(100, Math.round(idleDays / 7 * 100)));
-            return (
-              <article className={`tool-usage-row ${item.isFolded ? "is-folded" : ""} ${idleDays > 7 ? "is-stale" : ""}`} key={item.toolKey}>
-                <div className={`tool-usage-mark ${item.toolKey}`}>{tool.mark}</div>
-                <div className="tool-usage-data">
-                  <div className="tool-usage-name"><span><small>{tool.category}</small><strong>{tool.name}</strong></span><b>{formatToolInactivity(item)}</b></div>
-                  <div className="tool-usage-bar"><i style={{ "--usage-width": `${width}%` } as React.CSSProperties} /></div>
-                  <div className="tool-usage-meta"><span>按自然日计算</span>{item.isFolded ? <em>已由你收进不常用</em> : recommended ? <em className="is-recommendation">超过 7 天未使用，建议收起</em> : <em>仍在常用区</em>}</div>
-                </div>
-                <button type="button" disabled={user.edition === "guest"} onClick={() => onSetFolded(item.toolKey, !item.isFolded)}>{item.isFolded ? "恢复常用" : "收进不常用"}</button>
-              </article>
-            );
-          })}
+        <div className="tool-usage-column-chart" aria-label="各模块未使用天数柱状图">
+          <div className="tool-chart-axis" aria-hidden="true">
+            {chartTicks.map((tick) => <span key={tick}>{tick} 天</span>)}
+          </div>
+          <div className="tool-chart-plot">
+            <div className="tool-chart-threshold" style={{ "--threshold-position": `${7 / chartMaxDays * 100}%` } as React.CSSProperties}><span>7 天提醒线</span></div>
+            <div className="tool-chart-grid" aria-hidden="true">{chartTicks.map((tick) => <i key={tick} />)}</div>
+            <div className="tool-chart-columns">
+              {rows.map((item) => {
+                const tool = TOOL_USAGE_PRESENTATION[item.toolKey];
+                const idleDays = getToolIdleDays(item);
+                const recommended = idleDays > 7 && !item.isFolded;
+                return (
+                  <article className={`tool-chart-column ${idleDays === 0 ? "is-today" : "is-idle"} ${item.isFolded ? "is-folded" : ""} ${idleDays > 7 ? "is-stale" : ""}`} key={item.toolKey}>
+                    <div className="tool-chart-bar-space">
+                      <div className="tool-chart-bar" style={{ "--bar-height": `${idleDays / chartMaxDays * 100}%` } as React.CSSProperties}>
+                        <strong>{idleDays === 0 ? "今天使用" : `${idleDays} 天未使用`}</strong>
+                      </div>
+                    </div>
+                    <div className="tool-chart-label"><span className={`tool-usage-mark ${item.toolKey}`}>{tool.mark}</span><small>{tool.category}</small><strong>{tool.name}</strong></div>
+                    <em>{item.isFolded ? "已收进不常用" : recommended ? "建议收起" : "仍在常用区"}</em>
+                    <button type="button" disabled={user.edition === "guest"} onClick={() => onSetFolded(item.toolKey, !item.isFolded)}>{item.isFolded ? "恢复常用" : "收进不常用"}</button>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <footer><span>每天首次使用会刷新状态，不累计点击次数</span><button type="button" onClick={onClose}>完成</button></footer>
@@ -2077,8 +2087,10 @@ function NotificationCenter({ user }: { user: UserSummary }) {
   const todayPending = items.filter(
     (item) => item.kind === "today_pending" && !item.readAt,
   );
+  const toolReminders = items.filter((item) => item.kind === "tool_inactive");
+  const unreadToolReminders = toolReminders.filter((item) => !item.readAt).length;
   const updates = items.filter(
-    (item) => item.kind !== "today_pending" || Boolean(item.readAt),
+    (item) => (item.kind !== "today_pending" || Boolean(item.readAt)) && item.kind !== "tool_inactive",
   );
 
   async function markRead(item: WorkbenchNotification) {
@@ -2099,6 +2111,9 @@ function NotificationCenter({ user }: { user: UserSummary }) {
     if (item.itemId) {
       setOpen(false);
       window.dispatchEvent(new CustomEvent("cabin:open-schedule"));
+    } else if (item.kind === "tool_inactive") {
+      setOpen(false);
+      window.dispatchEvent(new CustomEvent("cabin:open-tool-usage"));
     }
   }
 
@@ -2146,6 +2161,16 @@ function NotificationCenter({ user }: { user: UserSummary }) {
                 {todayPending.map((item) => (
                   <button className="notification-row is-unread today" type="button" key={item.id} onClick={() => void markRead(item)}>
                     <i>○</i><div><strong>{item.title}</strong><span>{item.body}</span></div><em>今天</em>
+                  </button>
+                ))}
+              </div>
+            )}
+            {toolReminders.length > 0 && (
+              <div className="notification-group tool-reminder-group">
+                <p>工具整理 {unreadToolReminders > 0 && <span>{unreadToolReminders}</span>}</p>
+                {toolReminders.map((item) => (
+                  <button className={`notification-row tool-reminder ${item.readAt ? "" : "is-unread"}`} type="button" key={item.id} onClick={() => void markRead(item)}>
+                    <i>!</i><div><strong>{item.title}</strong><span>{item.body}</span></div><em>{formatNotificationTime(item.createdAt)}</em>
                   </button>
                 ))}
               </div>
@@ -2426,6 +2451,7 @@ function OfficeHeader({
         <button className={current === "work" || current === "foyer" ? "active" : ""} type="button" onClick={() => openRoom("work")}>工作台</button>
         <button className={current === "life" ? "active" : ""} type="button" onClick={() => openRoom("life")}>生活</button>
         <button className={current === "entertainment" ? "active" : ""} type="button" onClick={() => openRoom("entertainment")}>娱乐</button>
+        {isBobUser(user) && <button className={current === "activity" ? "active" : ""} type="button" onClick={() => openRoom("activity")}>设备记录</button>}
       </nav>
       <div className="office-topbar-actions">
         <NotificationCenter user={user} />
@@ -3147,7 +3173,7 @@ function ScheduleWorkspace({
   onUse: () => void;
 }) {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [tab, setTab] = useState<"today" | "calendar" | "projects">("today");
+  const [tab, setTab] = useState<"schedule" | "projects">("schedule");
   const [createOpen, setCreateOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [projectUpdate, setProjectUpdate] = useState<ScheduleItem | null>(null);
@@ -3172,28 +3198,6 @@ function ScheduleWorkspace({
 
   const items = data?.scheduleItems ?? [];
   const entries = data?.scheduleEntries ?? [];
-  const todayEntries = entries.filter((entry) => entry.entryDate === today);
-  const touchedIds = new Set(todayEntries.map((entry) => entry.itemId));
-  const prioritySort = (a: ScheduleItem, b: ScheduleItem) => {
-    const touched = Number(touchedIds.has(a.id)) - Number(touchedIds.has(b.id));
-    if (touched !== 0) return touched;
-    const priority = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-    if (priority !== 0) return priority;
-    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-    return a.dueDate ? -1 : b.dueDate ? 1 : b.createdAt.localeCompare(a.createdAt);
-  };
-  const activeTasks = items
-    .filter((item) => item.kind === "task" && item.status === "active" && item.startDate <= today)
-    .sort(prioritySort);
-  const completedToday = items.filter(
-    (item) => item.kind === "task" && (
-      item.completedDate === today || todayEntries.some((entry) => entry.itemId === item.id && entry.action === "completed")
-    ),
-  );
-  const activeProjects = items
-    .filter((item) => item.kind === "project" && !item.parentItemId && item.status === "active" && item.startDate <= today)
-    .sort(prioritySort);
-
   async function completeTask(item: ScheduleItem) {
     try {
       await api("/api/schedule/entries", {
@@ -3270,8 +3274,7 @@ function ScheduleWorkspace({
       <header className="schedule-header">
         <button className="schedule-back" onClick={onBack}><span>←</span><div><small>返回木屋</small><strong>个人工作台</strong></div></button>
         <nav>
-          <button className={tab === "today" ? "active" : ""} onClick={() => setTab("today")}>今日</button>
-          <button className={tab === "calendar" ? "active" : ""} onClick={() => setTab("calendar")}>日历</button>
+          <button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>日程</button>
           <button className={tab === "projects" ? "active" : ""} onClick={() => setTab("projects")}>项目</button>
         </nav>
         <div className="schedule-header-actions">
@@ -3283,14 +3286,12 @@ function ScheduleWorkspace({
 
       <div className="schedule-wrap">
         <section className="schedule-hero">
-          <div><p>{formatLongDay(today)} · SHORT TERM</p><h1>{tab === "today" ? "把今天，整理得刚刚好。" : tab === "calendar" ? "让时间留下清楚的痕迹。" : "每个项目，都往前一点。"}</h1></div>
+          <div><p>{formatLongDay(today)} · SHORT TERM</p><h1>{tab === "schedule" ? "先看全局，再安排今天。" : "每个项目，都往前一点。"}</h1></div>
           <button className="schedule-create" onClick={() => setCreateOpen(true)}><span>＋</span>新建事项或项目</button>
         </section>
 
         {!data ? (
           <div className="schedule-loading"><i /><p>正在整理今天的地图…</p></div>
-        ) : tab === "calendar" ? (
-          <ScheduleCalendar items={items} entries={entries} today={today} />
         ) : tab === "projects" ? (
           <ProjectBoard
             projects={items.filter((item) => item.kind === "project")}
@@ -3303,49 +3304,18 @@ function ScheduleWorkspace({
             onDelete={(item) => void deleteProject(item)}
           />
         ) : (
-          <div className="today-dashboard">
-            <section className="today-main-panel">
-              <div className="schedule-section-head">
-                <div><span className="section-index">01</span><div><small>DAILY TASKS</small><h2>今天的事项</h2></div></div>
-                <p>{completedToday.length} / {activeTasks.length + completedToday.filter((item) => !item.repeatDaily).length} 完成</p>
-              </div>
-              <div className="daily-task-list">
-                {activeTasks.length === 0 ? (
-                  <button className="schedule-empty" onClick={() => setCreateOpen(true)}><span>＋</span><strong>今天还没有事项</strong><small>添加一件短线任务</small></button>
-                ) : activeTasks.map((item) => {
-                  const done = todayEntries.some((entry) => entry.itemId === item.id && entry.action === "completed");
-                  return (
-                    <article className={`daily-task ${done ? "done" : ""}`} key={item.id}>
-                      <button className="task-check" onClick={() => !done && void completeTask(item)} disabled={done}>{done ? "✓" : ""}</button>
-                      <div className="task-copy"><div><span className={`priority-pill ${item.priority}`}>{PRIORITY_LABELS[item.priority]}</span>{item.repeatDaily && <span className="repeat-pill">每日重复</span>}<ScheduleCollaborationMeta item={item} /></div><h3>{item.title}</h3>{item.note && <p>{item.note}</p>}</div>
-                      <div className="task-meta"><small>{item.isOwner ? (item.repeatDaily ? "今天的一次" : `计划于 ${formatDay(item.startDate)}`) : `来自 ${item.ownerUsername}`}</small>{item.isOwner && <><button onClick={() => setEditingItem(item)}>编辑</button><button className="convert-project-button" onClick={() => void convertTaskToProject(item)}>转为项目</button><button onClick={() => void archiveItem(item)}>结束</button></>}</div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              {completedToday.length > 0 && (
-                <div className="completed-fold"><p>今天已完成</p>{completedToday.map((item) => <span key={item.id}>✓ {item.title}</span>)}</div>
-              )}
-            </section>
-
-            <aside className="today-side-panel">
-              <div className="schedule-section-head compact"><div><span className="section-index">02</span><div><small>PROJECTS</small><h2>持续推进</h2></div></div><button onClick={() => setTab("projects")}>全部</button></div>
-              <div className="today-project-list">
-                {activeProjects.length === 0 ? (
-                  <button className="project-empty" onClick={() => setCreateOpen(true)}>创建第一个项目 →</button>
-                ) : activeProjects.map((project) => {
-                  const touched = touchedIds.has(project.id);
-                  return (
-                    <button className={`today-project ${touched ? "touched" : ""}`} key={project.id} onClick={() => setProjectUpdate(project)}>
-                      <div><span className={`priority-dot ${project.priority}`} /><small>{touched ? "今日已推进" : project.dueDate ? `截止 ${formatDay(project.dueDate)}` : "持续项目"}</small><ScheduleCollaborationMeta item={project} /><strong>{project.title}</strong></div>
-                      <span className="project-ring" style={{ "--project-progress": `${project.progress * 3.6}deg` } as React.CSSProperties}><em>{project.progress}%</em></span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="daily-quote"><span>“</span><p>长期的事，不必今天完成。<br />但可以今天推进。</p></div>
-            </aside>
+          <div className="schedule-overview">
+            <ScheduleCalendar
+              items={items}
+              entries={entries}
+              today={today}
+              onCompleteTask={(item) => void completeTask(item)}
+              onEdit={setEditingItem}
+              onConvertTask={(item) => void convertTaskToProject(item)}
+              onArchive={(item) => void archiveItem(item)}
+              onUpdateProject={setProjectUpdate}
+              onCreate={() => setCreateOpen(true)}
+            />
           </div>
         )}
       </div>
@@ -3662,7 +3632,7 @@ function ProjectBoard({
             </article>
           );
         })}
-        {active.length === 0 && <div className="project-board-empty"><span>◇</span><h3>还没有正在推进的项目</h3><p>回到“今日”，创建一个持续项目。</p></div>}
+        {active.length === 0 && <div className="project-board-empty"><span>◇</span><h3>还没有正在推进的项目</h3><p>回到“日程”，创建一个持续项目。</p></div>}
       </div>
       {history.length > 0 && <div className="project-history"><h3>项目历史</h3>{history.map((project) => <div key={project.id}><span>{project.status === "completed" ? "✓" : "—"}</span><strong>{project.title}</strong><small>{project.status === "completed" ? "已完成" : "已结束"}</small><em>{project.progress}%</em>{project.isOwner && <div className="project-history-actions"><button type="button" onClick={() => onRestore(project)}>还原</button><button type="button" className="danger" onClick={() => onDelete(project)}>删除</button></div>}</div>)}</div>}
     </section>
@@ -3775,10 +3745,22 @@ function ScheduleCalendar({
   items,
   entries,
   today,
+  onCompleteTask,
+  onEdit,
+  onConvertTask,
+  onArchive,
+  onUpdateProject,
+  onCreate,
 }: {
   items: ScheduleItem[];
   entries: ScheduleEntry[];
   today: string;
+  onCompleteTask: (item: ScheduleItem) => void;
+  onEdit: (item: ScheduleItem) => void;
+  onConvertTask: (item: ScheduleItem) => void;
+  onArchive: (item: ScheduleItem) => void;
+  onUpdateProject: (item: ScheduleItem) => void;
+  onCreate: () => void;
 }) {
   const [month, setMonth] = useState(() => {
     const date = parseDate(today);
@@ -3865,7 +3847,37 @@ function ScheduleCalendar({
       <aside className="schedule-day-detail">
         <p>{selected === today ? "TODAY" : "DAY RECORD"}</p>
         <h2>{formatLongDay(selected)}</h2>
-        {selectedItems.length === 0 ? <div className="schedule-day-empty"><span>·</span><strong>这一天很轻</strong><small>没有事项或项目记录</small></div> : <div className="schedule-day-items">{selectedItems.map((item) => { const entry = selectedEntries.find((record) => record.itemId === item.id); return <article key={item.id}><span className={entry ? "done" : ""}>{entry ? "✓" : item.kind === "project" ? "◇" : "○"}</span><div><small>{item.parentItemId ? `项目阶段 · ${item.parentTitle ?? "大项目"}` : item.kind === "project" ? "项目" : item.repeatDaily ? "每日事项" : "一次事项"}</small><ScheduleCollaborationMeta item={item} /><strong>{item.title}</strong>{entry?.note && <p>“{entry.note}” · {entry.actorUsername}</p>}</div>{item.kind === "project" && <em>{entry?.progress ?? item.progress}%</em>}</article>; })}</div>}
+        {selectedItems.length === 0 ? <div className="schedule-day-empty"><span>·</span><strong>这一天很轻</strong><small>没有事项或项目记录</small><button type="button" onClick={onCreate}>添加事项</button></div> : <div className="schedule-day-items">{selectedItems.map((item) => {
+          const entry = selectedEntries.find((record) => record.itemId === item.id);
+          const canActToday = selected === today && item.status === "active";
+          return <article key={item.id}>
+            {item.kind === "task" ? (
+              <button
+                type="button"
+                className={`schedule-item-check ${entry ? "done" : ""}`}
+                onClick={() => canActToday && !entry && onCompleteTask(item)}
+                disabled={!canActToday || Boolean(entry)}
+                aria-label={entry ? `${item.title}已完成` : canActToday ? `完成${item.title}` : `${item.title}当前不可完成`}
+                title={entry ? "已完成" : canActToday ? "点击完成" : "只能完成今天的事项"}
+              >{entry ? "✓" : ""}</button>
+            ) : (
+              <span className={`schedule-item-status ${entry ? "done" : ""}`}>{entry ? "✓" : "◇"}</span>
+            )}
+            <div><small>{item.parentItemId ? `项目阶段 · ${item.parentTitle ?? "大项目"}` : item.kind === "project" ? "项目" : item.repeatDaily ? "每日事项" : "一次事项"}</small><ScheduleCollaborationMeta item={item} /><strong>{item.title}</strong>{entry?.note && <p>“{entry.note}” · {entry.actorUsername}</p>}</div>
+            {item.kind === "project" && <em>{entry?.progress ?? item.progress}%</em>}
+            <div className="schedule-day-item-actions">
+              {item.kind === "project" && canActToday && <button type="button" className="primary" onClick={() => onUpdateProject(item)}>记录推进</button>}
+              {item.isOwner && <details className="schedule-item-more">
+                <summary aria-label={`${item.title}的更多操作`}>更多</summary>
+                <div className="schedule-item-more-menu">
+                  <button type="button" onClick={() => onEdit(item)}>编辑</button>
+                  {item.kind === "task" && <button type="button" onClick={() => onConvertTask(item)}>转为项目</button>}
+                  <button type="button" className="danger" onClick={() => onArchive(item)}>结束</button>
+                </div>
+              </details>}
+            </div>
+          </article>;
+        })}</div>}
       </aside>
     </section>
   );

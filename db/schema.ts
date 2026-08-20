@@ -199,7 +199,7 @@ export const notifications = sqliteTable(
       onDelete: "set null",
     }),
     kind: text("kind", {
-      enum: ["today_pending", "shared", "progress", "changed", "removed"],
+      enum: ["today_pending", "shared", "progress", "changed", "removed", "tool_inactive"],
     }).notNull(),
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
