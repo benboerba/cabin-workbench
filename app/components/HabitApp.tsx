@@ -3578,8 +3578,20 @@ function ProjectBoard({
   const history = rootProjects.filter((project) => project.status !== "active");
 
   function exportProject(project: ScheduleItem) {
-    const logs = entries.filter((entry) => entry.itemId === project.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const text = `# ${project.title}｜项目推进记录\n\n${logs.map((entry) => `## ${formatDay(entry.entryDate)} · ${entry.actorUsername} · ${entry.previousProgress ?? "?"}% → ${entry.progress ?? project.progress}%\n\n${entry.note || "未填写备注"}`).join("\n\n")}`;
+    const stageById = new Map(
+      projects
+        .filter((candidate) => candidate.parentItemId === project.id)
+        .map((stage) => [stage.id, stage]),
+    );
+    const relatedItemIds = new Set([project.id, ...stageById.keys()]);
+    const logs = entries
+      .filter((entry) => relatedItemIds.has(entry.itemId) && entry.progress !== null)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const text = `# ${project.title}｜项目推进记录\n\n${logs.map((entry) => {
+      const stage = stageById.get(entry.itemId);
+      const source = stage ? ` · 阶段：${stage.title}` : " · 大项目";
+      return `## ${formatDay(entry.entryDate)} · ${entry.actorUsername}${source} · ${entry.previousProgress ?? "?"}% → ${entry.progress ?? project.progress}%\n\n${entry.note || "未填写备注"}`;
+    }).join("\n\n")}`;
     const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -3594,11 +3606,15 @@ function ProjectBoard({
       <div className="project-board-head"><div><p>ACTIVE PROJECTS</p><h2>正在推进的项目</h2></div><span>{active.length} 个项目</span></div>
       <div className="project-card-grid">
         {active.map((project) => {
-          const projectEntries = entries.filter((entry) => entry.itemId === project.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-          const todayEntry = projectEntries.find((entry) => entry.entryDate === today);
-          const logs = projectEntries;
-          const stages = projects
-            .filter((candidate) => candidate.parentItemId === project.id && candidate.status !== "archived")
+          const allStages = projects.filter((candidate) => candidate.parentItemId === project.id);
+          const stageById = new Map(allStages.map((stage) => [stage.id, stage]));
+          const relatedItemIds = new Set([project.id, ...stageById.keys()]);
+          const logs = entries
+            .filter((entry) => relatedItemIds.has(entry.itemId) && entry.progress !== null)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          const todayEntry = logs.find((entry) => entry.entryDate === today);
+          const stages = allStages
+            .filter((candidate) => candidate.status !== "archived")
             .sort((left, right) => left.startDate.localeCompare(right.startDate) || left.createdAt.localeCompare(right.createdAt));
           return (
             <article className={`project-card ${todayEntry ? "touched" : ""}`} key={project.id}>
@@ -3626,7 +3642,8 @@ function ProjectBoard({
                 {logs.length === 0 ? <p>还没有推进记录，第一次变化会显示在这里。</p> : <div>{logs.map((entry) => {
                   const previous = entry.previousProgress;
                   const direction = previous === null || previous === undefined ? "记录" : (entry.progress ?? 0) >= previous ? "向前推进" : "重新校准";
-                  return <article key={entry.id}><span>{entry.actorUsername.slice(0,1).toUpperCase()}</span><div><strong>{entry.actorUsername}</strong><small>{formatDay(entry.entryDate)} · {direction}</small>{entry.note && <p>{entry.note}</p>}</div><em>{previous ?? "?"}% <b>→</b> {entry.progress ?? project.progress}%</em></article>;
+                  const stage = stageById.get(entry.itemId);
+                  return <article key={entry.id}><span>{entry.actorUsername.slice(0,1).toUpperCase()}</span><div><strong>{entry.actorUsername}</strong><small>{stage ? `${stage.title} · 阶段 · ` : "大项目 · "}{formatDay(entry.entryDate)} · {direction}</small>{entry.note && <p>{entry.note}</p>}</div><em>{previous ?? "?"}% <b>→</b> {entry.progress ?? project.progress}%</em></article>;
                 })}</div>}
               </div>
             </article>
@@ -3708,8 +3725,19 @@ function buildScheduleWeekSegments(
   const laneEnds: number[] = [];
 
   return items
-    .map((item) => ({ item, range: getScheduleItemRange(item, entries, today) }))
-    .filter(({ range }) => range.startDate <= weekEnd && range.endDate >= weekStart)
+    .flatMap((item) => {
+      const range = getScheduleItemRange(item, entries, today);
+      if (range.startDate > weekEnd || range.endDate < weekStart) return [];
+      if (!item.repeatDaily || item.kind !== "task") return [{ item, range }];
+
+      const firstOccurrence = range.startDate > weekStart ? range.startDate : weekStart;
+      const lastOccurrence = range.endDate < weekEnd ? range.endDate : weekEnd;
+      const occurrences: Array<{ item: ScheduleItem; range: { startDate: string; endDate: string } }> = [];
+      for (let occurrenceDate = firstOccurrence; occurrenceDate <= lastOccurrence; occurrenceDate = addDays(occurrenceDate, 1)) {
+        occurrences.push({ item, range: { startDate: occurrenceDate, endDate: occurrenceDate } });
+      }
+      return occurrences;
+    })
     .sort((left, right) => {
       const startDifference = left.range.startDate.localeCompare(right.range.startDate);
       if (startDifference !== 0) return startDifference;
@@ -3824,15 +3852,15 @@ function ScheduleCalendar({
                     <button
                       key={`${segment.item.id}-${segment.startDate}`}
                       type="button"
-                      className={`schedule-event-bar ${segment.item.kind} priority-${segment.item.priority} ${segment.hasCompletion ? "has-completion" : ""} ${segment.continuesBefore ? "continues-before" : ""} ${segment.continuesAfter ? "continues-after" : ""}`}
+                      className={`schedule-event-bar ${segment.item.kind} ${segment.item.repeatDaily ? "repeat-daily" : ""} priority-${segment.item.priority} ${segment.hasCompletion ? "has-completion" : ""} ${segment.continuesBefore ? "continues-before" : ""} ${segment.continuesAfter ? "continues-after" : ""}`}
                       style={{
                         gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`,
                         gridRow: segment.lane + 1,
                         backgroundColor: eventColorByGroupId.get(segment.item.parentItemId ?? segment.item.id) ?? SCHEDULE_EVENT_COLORS[0],
                       }}
                       onClick={() => setSelected(segment.startDate)}
-                      title={`${segment.item.title} · ${formatDay(segment.startDate)} 至 ${formatDay(segment.endDate)}`}
-                      aria-label={`${segment.item.kind === "project" ? "项目" : "事项"}：${segment.item.title}，${formatDay(segment.startDate)}至${formatDay(segment.endDate)}`}
+                      title={segment.item.repeatDaily ? `${segment.item.title} · ${formatDay(segment.startDate)}` : `${segment.item.title} · ${formatDay(segment.startDate)} 至 ${formatDay(segment.endDate)}`}
+                      aria-label={segment.item.repeatDaily ? `每日事项：${segment.item.title}，${formatDay(segment.startDate)}` : `${segment.item.kind === "project" ? "项目" : "事项"}：${segment.item.title}，${formatDay(segment.startDate)}至${formatDay(segment.endDate)}`}
                     >
                       <span>{segment.item.title}</span>
                       {segment.hasCompletion ? <i aria-hidden="true">✓</i> : null}

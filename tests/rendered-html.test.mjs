@@ -93,6 +93,9 @@ test("uses allowlisted username identity and durable server storage", async () =
   assert.match(app, /全部推进记录/);
   assert.match(app, /entry\.actorUsername/);
   assert.match(app, /entry\.previousProgress/);
+  assert.match(app, /relatedItemIds\.has\(entry\.itemId\)/);
+  assert.match(app, /stageById\.get\(entry\.itemId\)/);
+  assert.match(app, /阶段：\$\{stage\.title\}/);
   assert.match(schema, /export const scheduleParticipants/);
   assert.match(schema, /export const notifications/);
   assert.match(schema, /export const dailyPhraseStates/);
@@ -138,6 +141,9 @@ test("supports collaborative project stages on the calendar", async () => {
   assert.match(app, /item\.parentItemId \?\? item\.id/);
   assert.match(app, /项目阶段 ·/);
   assert.match(app, /scheduleItemsRelevantForDate\(calendarItems, entries, today, date\)/);
+  assert.match(app, /if \(!item\.repeatDaily \|\| item\.kind !== "task"\)/);
+  assert.match(app, /range: \{ startDate: occurrenceDate, endDate: occurrenceDate \}/);
+  assert.match(app, /每日事项：\$\{segment\.item\.title\}/);
   assert.match(app, /scheduleItems=\{data\?\.scheduleItems \?\? \[\]\}/);
   assert.match(app, /项目已还原/);
   assert.match(app, /项目阶段和全部推进记录都会一起删除/);
