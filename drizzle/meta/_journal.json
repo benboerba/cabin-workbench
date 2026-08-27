@@ -85,6 +85,13 @@
       "when": 1787839283979,
       "tag": "0011_conscious_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787841815384,
+      "tag": "0012_ancient_xavin",
+      "breakpoints": true
     }
   ]
 }

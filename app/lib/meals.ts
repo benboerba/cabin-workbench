@@ -30,3 +30,17 @@ export function sanitizeMealImage(value: unknown): string | null | undefined {
   if (value.length > 1_400_000) return undefined;
   return value;
 }
+
+export function sanitizeMealTutorialUrl(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length > 500) return undefined;
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}

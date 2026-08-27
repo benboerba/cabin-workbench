@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "../../../../db";
 import { mealRecipes } from "../../../../db/schema";
 import { requireApiUser } from "../../../lib/current-user";
-import { isBobUser, isMealCategory, sanitizeMealImage } from "../../../lib/meals";
+import { isBobUser, isMealCategory, sanitizeMealImage, sanitizeMealTutorialUrl } from "../../../lib/meals";
 
 export async function POST(request: Request) {
   const auth = await requireApiUser({ writable: true });
@@ -21,6 +21,7 @@ export async function POST(request: Request) {
   const name = typeof payload.name === "string" ? payload.name.trim() : "";
   const description = typeof payload.description === "string" ? payload.description.trim() : "";
   const imageData = sanitizeMealImage(payload.imageData);
+  const tutorialUrl = sanitizeMealTutorialUrl(payload.tutorialUrl);
   if (!name || name.length > 40 || description.length > 160) {
     return Response.json({ error: "菜名或简介长度不正确" }, { status: 400 });
   }
@@ -30,6 +31,9 @@ export async function POST(request: Request) {
   if (payload.imageData !== undefined && imageData === undefined) {
     return Response.json({ error: "图片格式不支持或图片过大" }, { status: 400 });
   }
+  if (payload.tutorialUrl !== undefined && tutorialUrl === undefined) {
+    return Response.json({ error: "教程链接格式不正确，请填写 http 或 https 网页地址" }, { status: 400 });
+  }
 
   const now = new Date().toISOString();
   const [recipe] = await getDb().insert(mealRecipes).values({
@@ -38,6 +42,7 @@ export async function POST(request: Request) {
     description,
     category: payload.category,
     imageData: imageData ?? null,
+    tutorialUrl: tutorialUrl ?? null,
     isActive: true,
     createdByUserId: auth.user.userId,
     createdAt: now,

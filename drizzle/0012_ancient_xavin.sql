@@ -1,0 +1,1 @@
+ALTER TABLE `meal_recipes` ADD `tutorial_url` text;

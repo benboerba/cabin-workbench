@@ -17,6 +17,7 @@ type MealRecipe = {
   description: string;
   category: MealCategory;
   imageData: string | null;
+  tutorialUrl: string | null;
   isActive: boolean;
   selectors: MealSelector[];
   isSelectedByMe: boolean;
@@ -36,6 +37,7 @@ type RecipeDraft = {
   description: string;
   category: MealCategory;
   imageData: string | null | undefined;
+  tutorialUrl: string;
 };
 
 const CATEGORY_OPTIONS: Array<{ key: "all" | MealCategory; label: string; icon: string }> = [
@@ -53,6 +55,7 @@ const EMPTY_DRAFT: RecipeDraft = {
   description: "",
   category: "meat",
   imageData: undefined,
+  tutorialUrl: "",
 };
 
 function categoryLabel(category: MealCategory) {
@@ -90,17 +93,19 @@ function compressRecipeImage(file: File): Promise<string> {
       const image = new Image();
       image.onerror = () => reject(new Error("图片格式无法识别"));
       image.onload = () => {
-        const maxSide = 1000;
-        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        const outputSize = 900;
+        const sourceSize = Math.min(image.width, image.height);
+        const sourceX = Math.round((image.width - sourceSize) / 2);
+        const sourceY = Math.round((image.height - sourceSize) / 2);
         const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(image.width * scale));
-        canvas.height = Math.max(1, Math.round(image.height * scale));
+        canvas.width = outputSize;
+        canvas.height = outputSize;
         const context = canvas.getContext("2d");
         if (!context) {
           reject(new Error("图片处理失败"));
           return;
         }
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, outputSize, outputSize);
         resolve(canvas.toDataURL("image/jpeg", 0.78));
       };
       image.src = String(reader.result);
@@ -184,6 +189,7 @@ export function MealPlanner({
       description: recipe.description,
       category: recipe.category,
       imageData: recipe.imageData,
+      tutorialUrl: recipe.tutorialUrl ?? "",
     } : { ...EMPTY_DRAFT });
   }
 
@@ -200,6 +206,7 @@ export function MealPlanner({
           name: draft.name,
           description: draft.description,
           category: draft.category,
+          tutorialUrl: draft.tutorialUrl,
           ...(draft.imageData !== undefined ? { imageData: draft.imageData } : {}),
         }),
       });
@@ -285,7 +292,8 @@ export function MealPlanner({
                         <span className="meal-recipe-copy"><small>{categoryLabel(recipe.category)}</small><strong>{recipe.name}</strong><em>{recipe.description || "今晚可以安排"}</em></span>
                       </button>
                       <div className="meal-selector-row">
-                        {recipe.selectors.length > 0 ? <><span>{recipe.selectors.map((selector) => selector.displayName).join("、")}</span><small>想吃</small></> : <small>还没有人点</small>}
+                        <div>{recipe.selectors.length > 0 ? <><span>{recipe.selectors.map((selector) => selector.displayName).join("、")}</span><small>想吃</small></> : <small>还没有人点</small>}</div>
+                        {recipe.tutorialUrl && <a href={recipe.tutorialUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>看教程 ↗</a>}
                       </div>
                     </article>
                   );
@@ -326,7 +334,7 @@ export function MealPlanner({
               {data.recipes.map((recipe) => (
                 <article className={!recipe.isActive ? "inactive" : ""} key={recipe.id}>
                   <span>{recipe.imageData ? <img src={recipe.imageData} alt="" /> : categoryLabel(recipe.category).slice(0, 1)}</span>
-                  <div><small>{categoryLabel(recipe.category)} · {recipe.isActive ? "可点" : "已下架"}</small><strong>{recipe.name}</strong><em>{recipe.description || "暂无简介"}</em></div>
+                  <div><small>{categoryLabel(recipe.category)} · {recipe.isActive ? "可点" : "已下架"}</small><strong>{recipe.name}</strong><em>{recipe.description || "暂无简介"}</em>{recipe.tutorialUrl && <a href={recipe.tutorialUrl} target="_blank" rel="noreferrer">查看教程 ↗</a>}</div>
                   <button type="button" onClick={() => openRecipeEditor(recipe)}>编辑</button>
                   <button type="button" onClick={() => void toggleAvailability(recipe)} disabled={busyId === recipe.id}>{recipe.isActive ? "下架" : "恢复"}</button>
                 </article>
@@ -350,6 +358,7 @@ export function MealPlanner({
             <label>菜名<input required maxLength={40} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="例如：番茄炒蛋" /></label>
             <label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as MealCategory })}>{CATEGORY_OPTIONS.filter((item) => item.key !== "all").map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
             <label>一句介绍（可选）<textarea maxLength={160} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="例如：酸甜下饭，十分钟就能做好。" /></label>
+            <label>教程链接（可选）<input type="url" maxLength={500} value={draft.tutorialUrl} onChange={(event) => setDraft({ ...draft, tutorialUrl: event.target.value })} placeholder="粘贴小红书、下厨房或其他教程网页链接" /></label>
             {error && <div className="meal-modal-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}>×</button></div>}
             {draft.imageData && <button type="button" className="meal-remove-image" onClick={() => setDraft({ ...draft, imageData: null })}>移除图片</button>}
             <button type="submit" className="meal-save" disabled={saving}>{saving ? "正在保存…" : "保存菜谱"}</button>

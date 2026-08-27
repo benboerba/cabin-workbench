@@ -301,6 +301,7 @@ export const mealRecipes = sqliteTable(
       .notNull()
       .default("other"),
     imageData: text("image_data"),
+    tutorialUrl: text("tutorial_url"),
     isActive: integer("is_active", { mode: "boolean" })
       .notNull()
       .default(true),

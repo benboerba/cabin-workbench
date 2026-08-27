@@ -2726,7 +2726,7 @@ footer p {
   position: relative;
   display: grid;
   place-items: center;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
   background: linear-gradient(145deg, #edf0e9, #e1e8df);
 }
@@ -2803,7 +2803,14 @@ footer p {
   font-size: 10px;
 }
 
-.meal-selector-row > span {
+.meal-selector-row > div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.meal-selector-row > div > span {
   min-width: 0;
   overflow: hidden;
   color: #466a57;
@@ -2815,6 +2822,21 @@ footer p {
 .meal-selector-row small {
   flex: 0 0 auto;
   color: #a0a7a2;
+}
+
+.meal-selector-row > a,
+.meal-manager-list article > div > a {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #426e5a;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.meal-manager-list article > div > a {
+  margin: 2px 0 0;
+  justify-self: start;
 }
 
 .meal-summary-list {
@@ -3128,7 +3150,7 @@ footer p {
   display: grid;
   place-items: center;
   width: 74px;
-  height: 62px;
+  height: 74px;
   overflow: hidden;
   border-radius: 10px;
   background: #e9eee8;
