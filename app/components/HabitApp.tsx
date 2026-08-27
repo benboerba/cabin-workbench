@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ONBOARDING_VERSION } from "../lib/onboarding";
 import { withBasePath } from "../lib/base-path";
+import { MealPlanner } from "./MealPlanner";
 
 type Challenge = {
   id: string;
@@ -89,7 +90,7 @@ type FavoritePhraseData = {
   favorites: FavoritePhrase[];
 };
 
-type WorkbenchToolKey = "habit" | "schedule" | "pindou" | "favorites";
+type WorkbenchToolKey = "habit" | "schedule" | "pindou" | "favorites" | "meal";
 
 type ToolUsageRecord = {
   toolKey: WorkbenchToolKey;
@@ -193,7 +194,7 @@ type WorkbenchTheme = "cabin" | "office";
 const WORKBENCH_THEME_STORAGE_KEY = "cabin-workbench-theme";
 const PINDOU_TOOL_PATH = "/pindou/index.html";
 const FAVORITES_TOOL_PATH = "/favorites";
-const WORKBENCH_TOOL_KEYS: WorkbenchToolKey[] = ["habit", "schedule", "pindou", "favorites"];
+const WORKBENCH_TOOL_KEYS: WorkbenchToolKey[] = ["habit", "schedule", "meal", "pindou", "favorites"];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const CHALLENGE_COLORS = ["#e36a44", "#5b8272", "#c49a45"];
@@ -327,7 +328,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function HabitApp({ user }: { user: UserSummary }) {
-  const [activeTool, setActiveTool] = useState<"world" | "habit" | "schedule">("world");
+  const [activeTool, setActiveTool] = useState<"world" | "habit" | "schedule" | "meal">("world");
   const [theme, setTheme] = useState<WorkbenchTheme>("cabin");
   const [guideOpen, setGuideOpen] = useState(user.onboardingVersion < ONBOARDING_VERSION);
   const [downloadsOpen, setDownloadsOpen] = useState(false);
@@ -398,6 +399,8 @@ export function HabitApp({ user }: { user: UserSummary }) {
     ? <HabitWorkspace user={user} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("habit")} />
     : activeTool === "schedule"
       ? <ScheduleWorkspace user={user} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("schedule")} />
+      : activeTool === "meal"
+        ? <MealPlanner displayName={user.displayName} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("meal")} />
       : (
         <WorldWorkbench
           user={user}
@@ -407,6 +410,7 @@ export function HabitApp({ user }: { user: UserSummary }) {
           onOpenDownloads={() => setDownloadsOpen(true)}
           openHabit={() => setActiveTool("habit")}
           openSchedule={() => setActiveTool("schedule")}
+          openMeal={() => setActiveTool("meal")}
           onUseTool={markToolUsed}
         />
       );
@@ -1387,6 +1391,7 @@ function WorldWorkbench({
   onOpenDownloads,
   openHabit,
   openSchedule,
+  openMeal,
   onUseTool,
 }: {
   user: UserSummary;
@@ -1396,6 +1401,7 @@ function WorldWorkbench({
   onOpenDownloads: () => void;
   openHabit: () => void;
   openSchedule: () => void;
+  openMeal: () => void;
   onUseTool: (toolKey: WorkbenchToolKey) => void;
 }) {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -1467,6 +1473,7 @@ function WorldWorkbench({
 
   const launchHabit = () => launchTool("habit", openHabit);
   const launchSchedule = () => launchTool("schedule", openSchedule);
+  const launchMeal = () => launchTool("meal", openMeal);
   const launchPindou = () => launchTool("pindou", openPindouTool);
   const launchFavorites = () => launchTool("favorites", openFavoritesTool);
 
@@ -1519,6 +1526,14 @@ function WorldWorkbench({
         </button>
       );
     }
+    if (toolKey === "meal") {
+      return (
+        <button key={toolKey} className="tool-tile meal-tile" onClick={launchMeal}>
+          <span className="tool-pixel-icon">餐</span>
+          <div><small>FAMILY DINNER</small><h3>今晚吃什么</h3><p>四个人共享今晚菜单，看见彼此想吃什么。</p><em>打开家庭点菜板 →</em></div>
+        </button>
+      );
+    }
     return (
       <button key={toolKey} className="tool-tile pindou-tile" onClick={launchPindou}>
         <span className="tool-pixel-icon">豆</span>
@@ -1548,6 +1563,7 @@ function WorldWorkbench({
           openRoom={openRoom}
           openHabit={launchHabit}
           openSchedule={launchSchedule}
+          openMeal={launchMeal}
           openPindou={launchPindou}
           openFavorites={launchFavorites}
           onToggleTheme={onToggleTheme}
@@ -1619,6 +1635,7 @@ function WorldWorkbench({
         openRoom={openRoom}
         openHabit={launchHabit}
         openSchedule={launchSchedule}
+        openMeal={launchMeal}
         openPindou={launchPindou}
         openFavorites={launchFavorites}
         toolUsage={toolUsage}
@@ -1770,7 +1787,7 @@ function WorldWorkbench({
             <h2 id="tool-library-title">工具箱</h2>
             <span className="tool-library-copy">日程和习惯留在工作台，辅助创作工具收在这里。</span>
             <div className="tool-library-grid">
-              {activeToolKeys.filter((toolKey) => toolKey === "pindou" || toolKey === "favorites").map(renderCabinToolTile)}
+              {activeToolKeys.filter((toolKey) => toolKey === "meal" || toolKey === "pindou" || toolKey === "favorites").map(renderCabinToolTile)}
             </div>
             {foldedToolKeys.length > 0 && (
               <details className="infrequent-tools-card cabin-infrequent-tools">
@@ -1791,6 +1808,7 @@ function WorldWorkbench({
 const TOOL_USAGE_PRESENTATION: Record<WorkbenchToolKey, { name: string; category: string; mark: string }> = {
   habit: { name: "一分小事", category: "长期习惯", mark: "1′" },
   schedule: { name: "个人日程", category: "任务与项目", mark: "▦" },
+  meal: { name: "今晚吃什么", category: "家庭生活", mark: "餐" },
   pindou: { name: "拼豆识图", category: "创作工具", mark: "豆" },
   favorites: { name: "灵感库", category: "灵感收藏", mark: "🗂" },
 };
@@ -2615,6 +2633,7 @@ function OfficeFoyer({
   openRoom,
   openHabit,
   openSchedule,
+  openMeal,
   openPindou,
   openFavorites,
   onToggleTheme,
@@ -2627,6 +2646,7 @@ function OfficeFoyer({
   openRoom: (room: CabinRoom) => void;
   openHabit: () => void;
   openSchedule: () => void;
+  openMeal: () => void;
   openPindou: () => void;
   openFavorites: () => void;
   onToggleTheme: () => void;
@@ -2683,6 +2703,7 @@ function OfficeFoyer({
           <div><p>常用工具</p><span>直接开始，不必绕路</span></div>
           <button type="button" onClick={openHabit}><i>1′</i><span><small>长期习惯</small><strong>一分小事</strong></span><b>打开</b></button>
           <button type="button" onClick={openSchedule}><i>▦</i><span><small>任务与项目</small><strong>个人日程</strong></span><b>打开</b></button>
+          <button type="button" onClick={openMeal}><i>餐</i><span><small>家庭生活</small><strong>今晚吃什么</strong></span><b>打开</b></button>
           <button type="button" onClick={openPindou}><i>豆</i><span><small>创作工具</small><strong>拼豆识图</strong></span><b>打开</b></button>
           <button type="button" onClick={openFavorites}><i>🗂</i><span><small>灵感收藏</small><strong>灵感库</strong></span><b>打开</b></button>
         </section>
@@ -2697,6 +2718,7 @@ function OfficeWorkRoom({
   openRoom,
   openHabit,
   openSchedule,
+  openMeal,
   openPindou,
   openFavorites,
   toolUsage,
@@ -2712,6 +2734,7 @@ function OfficeWorkRoom({
   openRoom: (room: CabinRoom) => void;
   openHabit: () => void;
   openSchedule: () => void;
+  openMeal: () => void;
   openPindou: () => void;
   openFavorites: () => void;
   toolUsage: ToolUsageRecord[];
@@ -2744,6 +2767,16 @@ function OfficeWorkRoom({
       open: openSchedule,
     },
     {
+      key: "meal" as const,
+      className: "meal",
+      mark: "餐",
+      eyebrow: "FAMILY · 今晚吃什么",
+      title: "家庭点菜",
+      description: "四个人浏览同一份家常菜谱，点出今晚想吃的菜，也能随时取消。",
+      metric: <><strong>6</strong> 道 / 人</>,
+      open: openMeal,
+    },
+    {
       key: "pindou" as const,
       className: "pindou",
       mark: "豆",
@@ -2766,7 +2799,7 @@ function OfficeWorkRoom({
   ];
   const activeTools = tools.filter((tool) => !findToolUsage(toolUsage, tool.key)?.isFolded);
   const activeCoreTools = activeTools.filter((tool) => tool.key === "habit" || tool.key === "schedule");
-  const activeAuxiliaryTools = activeTools.filter((tool) => tool.key === "pindou" || tool.key === "favorites");
+  const activeAuxiliaryTools = activeTools.filter((tool) => tool.key === "meal" || tool.key === "pindou" || tool.key === "favorites");
   const foldedTools = tools.filter((tool) => findToolUsage(toolUsage, tool.key)?.isFolded);
 
   function renderOfficeTool(tool: (typeof tools)[number]) {
@@ -2824,7 +2857,7 @@ function OfficeWorkRoom({
             <div><i>工</i><span><small>TOOLBOX</small><strong>工具箱</strong><em>辅助创作工具集中收纳，不打断今天的工作。</em></span></div>
             <div className="office-toolbox-tools">
               {activeAuxiliaryTools.map((tool) => (
-                <button type="button" key={tool.key} onClick={tool.open}><i className={tool.className}>{tool.mark}</i><span><small>{tool.key === "favorites" ? "灵感收藏" : "创作工具"}</small><strong>{tool.title}</strong></span><b>打开 →</b></button>
+                <button type="button" key={tool.key} onClick={tool.open}><i className={tool.className}>{tool.mark}</i><span><small>{tool.key === "favorites" ? "灵感收藏" : tool.key === "meal" ? "家庭生活" : "创作工具"}</small><strong>{tool.title}</strong></span><b>打开 →</b></button>
               ))}
             </div>
           </section>

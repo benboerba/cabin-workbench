@@ -6,7 +6,7 @@ import { requireApiUser } from "../../lib/current-user";
 
 export const dynamic = "force-dynamic";
 
-const TOOL_KEYS = ["habit", "schedule", "pindou", "favorites"] as const;
+const TOOL_KEYS = ["habit", "schedule", "meal", "pindou", "favorites"] as const;
 type ToolKey = (typeof TOOL_KEYS)[number];
 
 function isToolKey(value: unknown): value is ToolKey {

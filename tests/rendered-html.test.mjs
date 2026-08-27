@@ -150,3 +150,29 @@ test("supports collaborative project stages on the calendar", async () => {
   assert.match(app, /已转为项目，可以继续规划/);
   assert.match(app, />转为项目</);
 });
+
+test("supports a shared same-day family dinner menu", async () => {
+  const [app, mealPlanner, schema, mealRoute, selectionRoute, styles] = await Promise.all([
+    readFile(new URL("../app/components/HabitApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/MealPlanner.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/meals/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/meals/selections/[recipeId]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(app, /今晚吃什么/);
+  assert.match(app, /markToolUsed\("meal"\)/);
+  assert.match(schema, /export const mealRecipes/);
+  assert.match(schema, /export const mealSelections/);
+  assert.match(mealRoute, /getTodayInShanghai/);
+  assert.match(mealRoute, /displayName: users\.displayName/);
+  assert.match(selectionRoute, />= 6/);
+  assert.match(selectionRoute, /每人最多点 6 道菜/);
+  assert.match(mealPlanner, /大家已点/);
+  assert.match(mealPlanner, /selectors\.map/);
+  assert.match(mealPlanner, /data\?\.canManage/);
+  assert.match(mealPlanner, /管理菜谱/);
+  assert.match(styles, /meal-recipe-grid/);
+  assert.match(styles, /meal-mobile-tray/);
+});

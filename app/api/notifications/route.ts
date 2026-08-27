@@ -20,6 +20,7 @@ export async function GET() {
 const TOOL_NAMES = {
   habit: "一分小事",
   schedule: "个人日程",
+  meal: "今晚吃什么",
   pindou: "拼豆识图",
   favorites: "灵感库",
 } as const;

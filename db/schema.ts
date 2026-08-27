@@ -275,7 +275,7 @@ export const toolUsage = sqliteTable(
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
     toolKey: text("tool_key", {
-      enum: ["habit", "schedule", "pindou", "favorites"],
+      enum: ["habit", "schedule", "pindou", "favorites", "meal"],
     }).notNull(),
     openCount: integer("open_count").notNull().default(0),
     firstSeenAt: text("first_seen_at").notNull(),
@@ -286,5 +286,53 @@ export const toolUsage = sqliteTable(
   },
   (table) => [
     uniqueIndex("idx_tool_usage_user_tool").on(table.userId, table.toolKey),
+  ],
+);
+
+export const mealRecipes = sqliteTable(
+  "meal_recipes",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    category: text("category", {
+      enum: ["meat", "vegetable", "staple", "soup", "other"],
+    })
+      .notNull()
+      .default("other"),
+    imageData: text("image_data"),
+    isActive: integer("is_active", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    createdByUserId: text("created_by_user_id").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("idx_meal_recipes_active_category").on(table.isActive, table.category),
+  ],
+);
+
+export const mealSelections = sqliteTable(
+  "meal_selections",
+  {
+    id: text("id").primaryKey(),
+    recipeId: text("recipe_id")
+      .notNull()
+      .references(() => mealRecipes.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mealDate: text("meal_date").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("idx_meal_selections_recipe_user_date").on(
+      table.recipeId,
+      table.userId,
+      table.mealDate,
+    ),
+    index("idx_meal_selections_date").on(table.mealDate),
+    index("idx_meal_selections_user_date").on(table.userId, table.mealDate),
   ],
 );
