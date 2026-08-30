@@ -33,6 +33,7 @@ export default async function Home() {
   return (
     <HabitApp
       user={{
+        userId: user.userId,
         displayName: user.displayName,
         email: user.email,
         onboardingVersion: user.onboardingVersion,

@@ -16,7 +16,7 @@ type MealRecipe = {
   name: string;
   description: string;
   category: MealCategory;
-  imageData: string | null;
+  imageUrl: string | null;
   tutorialUrl: string | null;
   isActive: boolean;
   selectors: MealSelector[];
@@ -37,6 +37,7 @@ type RecipeDraft = {
   description: string;
   category: MealCategory;
   imageData: string | null | undefined;
+  imagePreviewUrl: string | null;
   tutorialUrl: string;
 };
 
@@ -55,6 +56,7 @@ const EMPTY_DRAFT: RecipeDraft = {
   description: "",
   category: "meat",
   imageData: undefined,
+  imagePreviewUrl: null,
   tutorialUrl: "",
 };
 
@@ -115,13 +117,17 @@ function compressRecipeImage(file: File): Promise<string> {
 }
 
 export function MealPlanner({
+  userId,
   displayName,
+  username,
   theme,
   onBack,
   onToggleTheme,
   onUse,
 }: {
+  userId: string;
   displayName: string;
+  username: string;
   theme: "cabin" | "office";
   onBack: () => void;
   onToggleTheme: () => void;
@@ -168,13 +174,27 @@ export function MealPlanner({
     }
     setBusyId(recipe.id);
     setError("");
+    const selecting = !recipe.isSelectedByMe;
+    const previousData = data;
+    const currentSelector: MealSelector = { userId, displayName, username };
+    setData((current) => current ? {
+      ...current,
+      mySelectionCount: Math.max(0, current.mySelectionCount + (selecting ? 1 : -1)),
+      recipes: current.recipes.map((item) => item.id === recipe.id ? {
+        ...item,
+        isSelectedByMe: selecting,
+        selectors: selecting
+          ? (item.selectors.some((selector) => selector.userId === userId) ? item.selectors : [...item.selectors, currentSelector])
+          : item.selectors.filter((selector) => selector.userId !== userId),
+      } : item),
+    } : current);
     try {
       await mealApi(`/api/meals/selections/${recipe.id}`, {
-        method: recipe.isSelectedByMe ? "DELETE" : "POST",
+        method: selecting ? "POST" : "DELETE",
       });
       onUse();
-      await load();
     } catch (reason) {
+      setData(previousData);
       setError(reason instanceof Error ? reason.message : "点菜失败");
     } finally {
       setBusyId(null);
@@ -188,7 +208,8 @@ export function MealPlanner({
       name: recipe.name,
       description: recipe.description,
       category: recipe.category,
-      imageData: recipe.imageData,
+      imageData: undefined,
+      imagePreviewUrl: recipe.imageUrl,
       tutorialUrl: recipe.tutorialUrl ?? "",
     } : { ...EMPTY_DRAFT });
   }
@@ -242,7 +263,7 @@ export function MealPlanner({
     if (!file || !draft) return;
     try {
       const imageData = await compressRecipeImage(file);
-      setDraft((current) => current ? { ...current, imageData } : current);
+      setDraft((current) => current ? { ...current, imageData, imagePreviewUrl: null } : current);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "图片处理失败");
     }
@@ -282,11 +303,12 @@ export function MealPlanner({
               <div className="meal-recipe-grid">
                 {menuRecipes.map((recipe) => {
                   const limitReached = Boolean(data && data.mySelectionCount >= data.selectionLimit && !recipe.isSelectedByMe);
+                  const imageSrc = recipe.imageUrl ? withBasePath(recipe.imageUrl) : null;
                   return (
                     <article className={`meal-recipe-card ${recipe.isSelectedByMe ? "selected" : ""}`} key={recipe.id}>
                       <button type="button" className="meal-recipe-main" onClick={() => void toggleRecipe(recipe)} disabled={busyId === recipe.id || limitReached} aria-pressed={recipe.isSelectedByMe}>
                         <span className="meal-recipe-photo">
-                          {recipe.imageData ? <img src={recipe.imageData} alt="" /> : <i>{CATEGORY_OPTIONS.find((item) => item.key === recipe.category)?.icon ?? "味"}</i>}
+                          {imageSrc ? <img src={imageSrc} alt="" loading="lazy" decoding="async" /> : <i>{CATEGORY_OPTIONS.find((item) => item.key === recipe.category)?.icon ?? "味"}</i>}
                           <b>{recipe.isSelectedByMe ? "✓ 已点" : "+ 想吃"}</b>
                         </span>
                         <span className="meal-recipe-copy"><small>{categoryLabel(recipe.category)}</small><strong>{recipe.name}</strong><em>{recipe.description || "今晚可以安排"}</em></span>
@@ -310,7 +332,7 @@ export function MealPlanner({
               <div className="meal-summary-list">
                 {orderedRecipes.map((recipe) => (
                   <article key={recipe.id}>
-                    <span>{recipe.imageData ? <img src={recipe.imageData} alt="" /> : categoryLabel(recipe.category).slice(0, 1)}</span>
+                    <span>{recipe.imageUrl ? <img src={withBasePath(recipe.imageUrl)} alt="" loading="lazy" decoding="async" /> : categoryLabel(recipe.category).slice(0, 1)}</span>
                     <div><strong>{recipe.name}</strong><small>{recipe.selectors.map((selector) => selector.displayName).join("、")} 想吃</small></div>
                     {recipe.isSelectedByMe && <button type="button" onClick={() => void toggleRecipe(recipe)} disabled={busyId === recipe.id}>取消</button>}
                   </article>
@@ -333,7 +355,7 @@ export function MealPlanner({
             <div className="meal-manager-list">
               {data.recipes.map((recipe) => (
                 <article className={!recipe.isActive ? "inactive" : ""} key={recipe.id}>
-                  <span>{recipe.imageData ? <img src={recipe.imageData} alt="" /> : categoryLabel(recipe.category).slice(0, 1)}</span>
+                  <span>{recipe.imageUrl ? <img src={withBasePath(recipe.imageUrl)} alt="" loading="lazy" decoding="async" /> : categoryLabel(recipe.category).slice(0, 1)}</span>
                   <div><small>{categoryLabel(recipe.category)} · {recipe.isActive ? "可点" : "已下架"}</small><strong>{recipe.name}</strong><em>{recipe.description || "暂无简介"}</em>{recipe.tutorialUrl && <a href={recipe.tutorialUrl} target="_blank" rel="noreferrer">查看教程 ↗</a>}</div>
                   <button type="button" onClick={() => openRecipeEditor(recipe)}>编辑</button>
                   <button type="button" onClick={() => void toggleAvailability(recipe)} disabled={busyId === recipe.id}>{recipe.isActive ? "下架" : "恢复"}</button>
@@ -351,8 +373,8 @@ export function MealPlanner({
             <small>{draft.id ? "EDIT RECIPE" : "NEW RECIPE"}</small>
             <h2>{draft.id ? "编辑这道菜" : "加入一道家常菜"}</h2>
             <label className="meal-image-field">
-              <span>{draft.imageData ? <img src={draft.imageData} alt="菜品预览" /> : <i>＋</i>}</span>
-              <strong>{draft.imageData ? "更换图片" : "上传菜品图片"}</strong>
+              <span>{draft.imageData || draft.imagePreviewUrl ? <img src={withBasePath(draft.imageData || draft.imagePreviewUrl || "")} alt="菜品预览" /> : <i>＋</i>}</span>
+              <strong>{draft.imageData || draft.imagePreviewUrl ? "更换图片" : "上传菜品图片"}</strong>
               <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void chooseImage(event.target.files?.[0])} />
             </label>
             <label>菜名<input required maxLength={40} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="例如：番茄炒蛋" /></label>
@@ -360,7 +382,7 @@ export function MealPlanner({
             <label>一句介绍（可选）<textarea maxLength={160} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="例如：酸甜下饭，十分钟就能做好。" /></label>
             <label>教程链接（可选）<input type="url" maxLength={500} value={draft.tutorialUrl} onChange={(event) => setDraft({ ...draft, tutorialUrl: event.target.value })} placeholder="粘贴小红书、下厨房或其他教程网页链接" /></label>
             {error && <div className="meal-modal-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}>×</button></div>}
-            {draft.imageData && <button type="button" className="meal-remove-image" onClick={() => setDraft({ ...draft, imageData: null })}>移除图片</button>}
+            {(draft.imageData || draft.imagePreviewUrl) && <button type="button" className="meal-remove-image" onClick={() => setDraft({ ...draft, imageData: null, imagePreviewUrl: null })}>移除图片</button>}
             <button type="submit" className="meal-save" disabled={saving}>{saving ? "正在保存…" : "保存菜谱"}</button>
           </form>
         </div>

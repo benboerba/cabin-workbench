@@ -152,11 +152,12 @@ test("supports collaborative project stages on the calendar", async () => {
 });
 
 test("supports a shared same-day family dinner menu", async () => {
-  const [app, mealPlanner, schema, mealRoute, selectionRoute, styles] = await Promise.all([
+  const [app, mealPlanner, schema, mealRoute, mealImageRoute, selectionRoute, styles] = await Promise.all([
     readFile(new URL("../app/components/HabitApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/MealPlanner.tsx", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/meals/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/meals/images/[id]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/meals/selections/[recipeId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -167,12 +168,18 @@ test("supports a shared same-day family dinner menu", async () => {
   assert.match(schema, /export const mealSelections/);
   assert.match(mealRoute, /getTodayInShanghai/);
   assert.match(mealRoute, /displayName: users\.displayName/);
+  assert.match(mealRoute, /imageUrl:/);
+  assert.doesNotMatch(mealRoute, /db\.select\(\)\.from\(mealRecipes\)/);
+  assert.match(mealImageRoute, /max-age=31536000/);
   assert.match(selectionRoute, />= 6/);
   assert.match(selectionRoute, /每人最多点 6 道菜/);
   assert.match(mealPlanner, /大家已点/);
   assert.match(mealPlanner, /selectors\.map/);
   assert.match(mealPlanner, /data\?\.canManage/);
   assert.match(mealPlanner, /管理菜谱/);
+  assert.match(mealPlanner, /loading="lazy"/);
+  assert.match(mealPlanner, /const selecting = !recipe\.isSelectedByMe/);
+  assert.match(mealPlanner, /setData\(previousData\)/);
   assert.match(styles, /meal-recipe-grid/);
   assert.match(styles, /meal-mobile-tray/);
 });

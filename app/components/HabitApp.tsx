@@ -183,6 +183,7 @@ type ScheduleEntry = {
 };
 
 type UserSummary = {
+  userId: string;
   displayName: string;
   email: string;
   onboardingVersion: number;
@@ -400,7 +401,7 @@ export function HabitApp({ user }: { user: UserSummary }) {
     : activeTool === "schedule"
       ? <ScheduleWorkspace user={user} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("schedule")} />
       : activeTool === "meal"
-        ? <MealPlanner displayName={user.displayName} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("meal")} />
+        ? <MealPlanner userId={user.userId} displayName={user.displayName} username={user.email} theme={theme} onToggleTheme={toggleTheme} onBack={() => setActiveTool("world")} onUse={() => markToolUsed("meal")} />
       : (
         <WorldWorkbench
           user={user}

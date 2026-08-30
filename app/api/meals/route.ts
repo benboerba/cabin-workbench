@@ -1,4 +1,4 @@
-import { asc, eq, lt } from "drizzle-orm";
+import { asc, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { mealRecipes, mealSelections, users } from "../../../db/schema";
 import { requireApiUser } from "../../lib/current-user";
@@ -15,7 +15,18 @@ export async function GET() {
   const canManage = isBobUser(auth.user);
   await db.delete(mealSelections).where(lt(mealSelections.mealDate, today));
   const [recipeRows, selectionRows] = await Promise.all([
-    db.select().from(mealRecipes).orderBy(asc(mealRecipes.createdAt)),
+    db.select({
+      id: mealRecipes.id,
+      name: mealRecipes.name,
+      description: mealRecipes.description,
+      category: mealRecipes.category,
+      tutorialUrl: mealRecipes.tutorialUrl,
+      isActive: mealRecipes.isActive,
+      createdByUserId: mealRecipes.createdByUserId,
+      createdAt: mealRecipes.createdAt,
+      updatedAt: mealRecipes.updatedAt,
+      hasImage: sql<number>`case when ${mealRecipes.imageData} is null then 0 else 1 end`,
+    }).from(mealRecipes).orderBy(asc(mealRecipes.createdAt)),
     db
       .select({
         id: mealSelections.id,
@@ -40,8 +51,9 @@ export async function GET() {
 
   const recipes = recipeRows
     .filter((recipe) => canManage || recipe.isActive)
-    .map((recipe) => ({
+    .map(({ hasImage, ...recipe }) => ({
       ...recipe,
+      imageUrl: hasImage ? `/api/meals/images/${recipe.id}?v=${encodeURIComponent(recipe.updatedAt)}` : null,
       selectors: (selectionsByRecipe.get(recipe.id) ?? []).map((selection) => ({
         userId: selection.userId,
         displayName: selection.displayName,
