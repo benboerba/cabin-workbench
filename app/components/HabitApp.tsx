@@ -245,6 +245,12 @@ function formatDay(value: string) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function formatScheduleDisplayTitle(item: ScheduleItem) {
+  return item.parentItemId
+    ? `${item.parentTitle ?? "大项目"}：${item.title}`
+    : item.title;
+}
+
 function formatLongDay(value: string) {
   const date = parseDate(value);
   return new Intl.DateTimeFormat("zh-CN", {
@@ -2929,9 +2935,9 @@ function WorkWeekCalendar({
                   return (
                     <span className={`${item.kind} ${done ? "done" : ""}`} key={item.id}>
                       <i />
-                      <b>{item.title}</b>
+                      <b>{formatScheduleDisplayTitle(item)}</b>
                       {item.kind === "project" && (
-                        <small>{item.parentItemId ? `${item.parentTitle ?? "大项目"} · 阶段` : "项目"} · {entry?.progress ?? item.progress}%{item.dueDate ? ` · 截止 ${formatDay(item.dueDate)}` : ""}</small>
+                        <small>{item.parentItemId ? "项目阶段" : `项目 · ${entry?.progress ?? item.progress}%`}{item.dueDate ? ` · 截止 ${formatDay(item.dueDate)}` : ""}</small>
                       )}
                       {collaboration && <em>{collaboration}</em>}
                     </span>
@@ -3479,7 +3485,7 @@ function ScheduleItemModal({
           {friends.length > 0 && (
             <fieldset className="friend-field">
               <legend>关联好友（可多选）</legend>
-              <p>{kind === "project" ? "关联后会自动出现在对方日历，所有项目成员都能编辑项目、阶段和进度。" : "关联后会自动出现在对方日历，对方可以更新完成状态。"}</p>
+              <p>{kind === "project" ? "关联后会自动出现在对方日历，所有项目成员都能编辑项目和阶段，并调整总项目进度。" : "关联后会自动出现在对方日历，对方可以更新完成状态。"}</p>
               <div>
                 {friends.map((username) => {
                   const selected = participantUsernames.includes(username);
@@ -3612,20 +3618,10 @@ function ProjectBoard({
   const history = rootProjects.filter((project) => project.status !== "active");
 
   function exportProject(project: ScheduleItem) {
-    const stageById = new Map(
-      projects
-        .filter((candidate) => candidate.parentItemId === project.id)
-        .map((stage) => [stage.id, stage]),
-    );
-    const relatedItemIds = new Set([project.id, ...stageById.keys()]);
     const logs = entries
-      .filter((entry) => relatedItemIds.has(entry.itemId) && entry.progress !== null)
+      .filter((entry) => entry.itemId === project.id && entry.progress !== null)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const text = `# ${project.title}｜项目推进记录\n\n${logs.map((entry) => {
-      const stage = stageById.get(entry.itemId);
-      const source = stage ? ` · 阶段：${stage.title}` : " · 大项目";
-      return `## ${formatDay(entry.entryDate)} · ${entry.actorUsername}${source} · ${entry.previousProgress ?? "?"}% → ${entry.progress ?? project.progress}%\n\n${entry.note || "未填写备注"}`;
-    }).join("\n\n")}`;
+    const text = `# ${project.title}｜项目推进记录\n\n${logs.map((entry) => `## ${formatDay(entry.entryDate)} · ${entry.actorUsername} · 总项目 · ${entry.previousProgress ?? "?"}% → ${entry.progress ?? project.progress}%\n\n${entry.note || "未填写备注"}`).join("\n\n")}`;
     const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -3641,10 +3637,8 @@ function ProjectBoard({
       <div className="project-card-grid">
         {active.map((project) => {
           const allStages = projects.filter((candidate) => candidate.parentItemId === project.id);
-          const stageById = new Map(allStages.map((stage) => [stage.id, stage]));
-          const relatedItemIds = new Set([project.id, ...stageById.keys()]);
           const logs = entries
-            .filter((entry) => relatedItemIds.has(entry.itemId) && entry.progress !== null)
+            .filter((entry) => entry.itemId === project.id && entry.progress !== null)
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
           const todayEntry = logs.find((entry) => entry.entryDate === today);
           const stages = allStages
@@ -3664,8 +3658,6 @@ function ProjectBoard({
                     <article key={stage.id} className={stage.status === "completed" ? "completed" : ""}>
                       <span>{String(index + 1).padStart(2, "0")}</span>
                       <div><strong>{stage.title}</strong><small>{formatDay(stage.startDate)} — {formatDay(stage.dueDate ?? stage.startDate)}</small></div>
-                      <em>{stage.progress}%</em>
-                      {stage.status === "active" && <button type="button" onClick={() => onUpdate(stage)}>推进</button>}
                     </article>
                   ))}
                 </div>
@@ -3676,8 +3668,7 @@ function ProjectBoard({
                 {logs.length === 0 ? <p>还没有推进记录，第一次变化会显示在这里。</p> : <div>{logs.map((entry) => {
                   const previous = entry.previousProgress;
                   const direction = previous === null || previous === undefined ? "记录" : (entry.progress ?? 0) >= previous ? "向前推进" : "重新校准";
-                  const stage = stageById.get(entry.itemId);
-                  return <article key={entry.id}><span>{entry.actorUsername.slice(0,1).toUpperCase()}</span><div><strong>{entry.actorUsername}</strong><small>{stage ? `${stage.title} · 阶段 · ` : "大项目 · "}{formatDay(entry.entryDate)} · {direction}</small>{entry.note && <p>{entry.note}</p>}</div><em>{previous ?? "?"}% <b>→</b> {entry.progress ?? project.progress}%</em></article>;
+                  return <article key={entry.id}><span>{entry.actorUsername.slice(0,1).toUpperCase()}</span><div><strong>{entry.actorUsername}</strong><small>总项目 · {formatDay(entry.entryDate)} · {direction}</small>{entry.note && <p>{entry.note}</p>}</div><em>{previous ?? "?"}% <b>→</b> {entry.progress ?? project.progress}%</em></article>;
                 })}</div>}
               </div>
             </article>
@@ -3893,10 +3884,10 @@ function ScheduleCalendar({
                         backgroundColor: eventColorByGroupId.get(segment.item.parentItemId ?? segment.item.id) ?? SCHEDULE_EVENT_COLORS[0],
                       }}
                       onClick={() => setSelected(segment.startDate)}
-                      title={segment.item.repeatDaily ? `${segment.item.title} · ${formatDay(segment.startDate)}` : `${segment.item.title} · ${formatDay(segment.startDate)} 至 ${formatDay(segment.endDate)}`}
-                      aria-label={segment.item.repeatDaily ? `每日事项：${segment.item.title}，${formatDay(segment.startDate)}` : `${segment.item.kind === "project" ? "项目" : "事项"}：${segment.item.title}，${formatDay(segment.startDate)}至${formatDay(segment.endDate)}`}
+                      title={segment.item.repeatDaily ? `${formatScheduleDisplayTitle(segment.item)} · ${formatDay(segment.startDate)}` : `${formatScheduleDisplayTitle(segment.item)} · ${formatDay(segment.startDate)} 至 ${formatDay(segment.endDate)}`}
+                      aria-label={segment.item.repeatDaily ? `每日事项：${formatScheduleDisplayTitle(segment.item)}，${formatDay(segment.startDate)}` : `${segment.item.parentItemId ? "项目阶段" : segment.item.kind === "project" ? "项目" : "事项"}：${formatScheduleDisplayTitle(segment.item)}，${formatDay(segment.startDate)}至${formatDay(segment.endDate)}`}
                     >
-                      <span>{segment.item.title}</span>
+                      <span>{formatScheduleDisplayTitle(segment.item)}</span>
                       {segment.hasCompletion ? <i aria-hidden="true">✓</i> : null}
                     </button>
                   ))}
@@ -3925,10 +3916,10 @@ function ScheduleCalendar({
             ) : (
               <span className={`schedule-item-status ${entry ? "done" : ""}`}>{entry ? "✓" : "◇"}</span>
             )}
-            <div><small>{item.parentItemId ? `项目阶段 · ${item.parentTitle ?? "大项目"}` : item.kind === "project" ? "项目" : item.repeatDaily ? "每日事项" : "一次事项"}</small><ScheduleCollaborationMeta item={item} /><strong>{item.title}</strong>{entry?.note && <p>“{entry.note}” · {entry.actorUsername}</p>}</div>
-            {item.kind === "project" && <em>{entry?.progress ?? item.progress}%</em>}
+            <div><small>{item.parentItemId ? "项目阶段" : item.kind === "project" ? "项目" : item.repeatDaily ? "每日事项" : "一次事项"}</small><ScheduleCollaborationMeta item={item} /><strong>{formatScheduleDisplayTitle(item)}</strong>{entry?.note && <p>“{entry.note}” · {entry.actorUsername}</p>}</div>
+            {item.kind === "project" && !item.parentItemId && <em>{entry?.progress ?? item.progress}%</em>}
             <div className="schedule-day-item-actions">
-              {item.kind === "project" && canActToday && <button type="button" className="primary" onClick={() => onUpdateProject(item)}>记录推进</button>}
+              {item.kind === "project" && !item.parentItemId && canActToday && <button type="button" className="primary" onClick={() => onUpdateProject(item)}>记录推进</button>}
               {item.isOwner && <details className="schedule-item-more">
                 <summary aria-label={`${item.title}的更多操作`}>更多</summary>
                 <div className="schedule-item-more-menu">

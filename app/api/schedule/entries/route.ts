@@ -32,6 +32,12 @@ export async function POST(request: Request) {
   if (!canUpdate) {
     return Response.json({ error: "没有权限更新这个日程" }, { status: 403 });
   }
+  if (item.kind === "project" && item.parentItemId) {
+    return Response.json(
+      { error: "项目阶段不单独记录进度，请在总项目中调整进度" },
+      { status: 400 },
+    );
+  }
 
   const now = new Date().toISOString();
   const progress = item.kind === "project"

@@ -39,7 +39,7 @@ test("builds the pixel-cabin workbench and both tools", async () => {
   assert.match(app, /借鉴主包的工作台/);
   assert.match(app, /workbench-account-menu/);
   assert.doesNotMatch(app, /ScheduleUtilityDock/);
-  assert.match(app, /item\.parentItemId \? `\$\{item\.parentTitle \?\? "大项目"\} · 阶段` : "项目"/);
+  assert.match(app, /formatScheduleDisplayTitle\(item\)/);
   assert.match(app, /\/downloads\/cabin-workbench-local(?:-\d{8})?\.zip/);
   assert.match(app, /\/downloads\/cabin-workbench-server(?:-\d{8})?\.zip/);
   assert.doesNotMatch(page, /借鉴主包的工作台/);
@@ -93,9 +93,9 @@ test("uses allowlisted username identity and durable server storage", async () =
   assert.match(app, /全部推进记录/);
   assert.match(app, /entry\.actorUsername/);
   assert.match(app, /entry\.previousProgress/);
-  assert.match(app, /relatedItemIds\.has\(entry\.itemId\)/);
-  assert.match(app, /stageById\.get\(entry\.itemId\)/);
-  assert.match(app, /阶段：\$\{stage\.title\}/);
+  assert.match(app, /entry\.itemId === project\.id && entry\.progress !== null/);
+  assert.match(app, /总项目 ·/);
+  assert.doesNotMatch(app, /stageById/);
   assert.match(schema, /export const scheduleParticipants/);
   assert.match(schema, /export const notifications/);
   assert.match(schema, /export const dailyPhraseStates/);
@@ -119,10 +119,11 @@ test("uses allowlisted username identity and durable server storage", async () =
 });
 
 test("supports collaborative project stages on the calendar", async () => {
-  const [app, schema, itemRoute, collaboration, stageParser] = await Promise.all([
+  const [app, schema, itemRoute, entryRoute, collaboration, stageParser] = await Promise.all([
     readFile(new URL("../app/components/HabitApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/schedule/items/[id]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/schedule/entries/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/schedule-collaboration.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/schedule-stages.ts", import.meta.url), "utf8"),
   ]);
@@ -136,14 +137,20 @@ test("supports collaborative project stages on the calendar", async () => {
   assert.match(itemRoute, /payload\.action === "convert_to_project"/);
   assert.match(collaboration, /syncParticipantRows/);
   assert.match(stageParser, /最多拆成 24 个阶段/);
-  assert.match(app, /所有项目成员都能编辑项目、阶段和进度/);
+  assert.match(app, /所有项目成员都能编辑项目和阶段，并调整总项目进度/);
   assert.match(app, /添加一个项目阶段/);
   assert.match(app, /item\.parentItemId \?\? item\.id/);
-  assert.match(app, /项目阶段 ·/);
+  assert.match(app, /\? `\$\{item\.parentTitle \?\? "大项目"\}：\$\{item\.title\}`/);
+  assert.match(app, /<span>\{formatScheduleDisplayTitle\(segment\.item\)\}<\/span>/);
+  assert.match(app, /item\.kind === "project" && !item\.parentItemId && <em>/);
+  assert.doesNotMatch(app, /stage\.progress/);
+  assert.doesNotMatch(app, /onUpdate\(stage\)/);
+  assert.match(entryRoute, /item\.kind === "project" && item\.parentItemId/);
+  assert.match(entryRoute, /项目阶段不单独记录进度，请在总项目中调整进度/);
   assert.match(app, /scheduleItemsRelevantForDate\(calendarItems, entries, today, date\)/);
   assert.match(app, /if \(!item\.repeatDaily \|\| item\.kind !== "task"\)/);
   assert.match(app, /range: \{ startDate: occurrenceDate, endDate: occurrenceDate \}/);
-  assert.match(app, /每日事项：\$\{segment\.item\.title\}/);
+  assert.match(app, /每日事项：\$\{formatScheduleDisplayTitle\(segment\.item\)\}/);
   assert.match(app, /scheduleItems=\{data\?\.scheduleItems \?\? \[\]\}/);
   assert.match(app, /项目已还原/);
   assert.match(app, /项目阶段和全部推进记录都会一起删除/);
